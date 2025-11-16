@@ -496,6 +496,10 @@ async def delete_stock(ticker: str):
 
         logger.info(f"Deleted {ticker} | Removed {deleted_scores} score(s)")
         return {"status": "success", "ticker": ticker}
+        
+@app.get("/")
+async def root_redirect():
+    return RedirectResponse(url="/index")
 # -------------------------------------------------
 # RUN
 # -------------------------------------------------
