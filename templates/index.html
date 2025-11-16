@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Stock Recommender</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <style>
+    .sentiment-positive { color: #28a745; }
+    .sentiment-negative { color: #dc3545; }
+    .sentiment-neutral { color: #6c757d; }
+  </style>
+</head>
+<body class="bg-light">
+  <div class="container py-4">
+    <h1 class="text-center mb-4 text-primary">Stock Recommender Dashboard</h1>
+
+    <!-- BUTTONS -->
+    <div class="text-end mb-3">
+      <a href="/stock-select" class="btn btn-outline-primary me-2">Add More Stocks</a>
+      <button id="refreshAllBtn" class="btn btn-warning me-2" onclick="startRefreshAll()">
+        Refresh All
+      </button>
+      <span id="refreshStatus" class="text-muted small"></span>
+    </div>
+
+    <!-- TABLE -->
+    <div class="table-responsive">
+      <table class="table table-hover align-middle table-bordered">
+        <thead class="table-dark">
+          <tr>
+            <th>Ticker</th>
+            <th>Company</th>
+            <th>RSI</th>
+            <th>Sentiment</th>
+            <th>News</th>
+            <th>Sent Score</th>
+            <th>Tech Score</th>
+            <th>Final Score</th>
+            <th>Recommendation</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in stocks %}
+          <tr data-ticker="{{ s.ticker }}">
+            <td><strong>{{ s.ticker }}</strong></td>
+            <td>{{ s.company_name }}</td>
+
+            <!-- RSI -->
+            <td class="{% if s.rsi < 30 %}text-success fw-bold{% elif s.rsi > 70 %}text-danger fw-bold{% else %}text-muted{% endif %}">
+              {{ s.rsi }}
+            </td>
+
+            <!-- SENTIMENT -->
+            <td class="sentiment-{{ s.sentiment.lower() }} fw-bold">
+              {{ s.sentiment }}
+            </td>
+
+            <!-- NEWS COUNT -->
+            <td>
+              <span class="badge bg-info">{{ s.news_count }}</span>
+            </td>
+
+            <!-- SENTIMENT SCORE -->
+            <td class="{% if s.sentiment_score >= 0.6 %}text-success{% elif s.sentiment_score <= 0.4 %}text-danger{% else %}text-muted{% endif %}">
+              {{ "%.2f"|format(s.sentiment_score) }}
+            </td>
+
+            <!-- TECHNICAL SCORE -->
+            <td>{{ "%.2f"|format(s.technical_score) }}</td>
+
+            <!-- FINAL SCORE -->
+            <td class="fw-bold {% if s.final_score >= 0.6 %}text-success{% elif s.final_score <= 0.4 %}text-danger{% else %}text-warning{% endif %}">
+              {{ "%.2f"|format(s.final_score) }}
+            </td>
+
+            <!-- RECOMMENDATION -->
+            <td>
+              <span class="badge bg-{% if s.recommendation == 'BUY' %}success{% elif s.recommendation == 'SELL' %}danger{% else %}secondary{% endif %} fs-6">
+                {{ s.recommendation }}
+              </span>
+            </td>
+
+            <!-- ACTION BUTTONS -->
+            <td>
+              <div class="btn-group" role="group">
+                <button class="btn btn-sm btn-outline-secondary refresh-btn"
+                        onclick="refreshSingle('{{ s.ticker }}')"
+                        title="Refresh">
+                  Refresh
+                </button>
+                <button class="btn btn-sm btn-outline-danger"
+                        onclick="deleteStock('{{ s.ticker }}')"
+                        title="Delete">
+                  Delete
+                </button>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- NO STOCKS -->
+    {% if not stocks %}
+    <div class="text-center py-5">
+      <p class="text-muted">No stocks added yet.</p>
+      <a href="/stock-select" class="btn btn-primary">Add Stocks</a>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- DELETE CONFIRM MODAL -->
+  <div class="modal fade" id="deleteModal" tabindex="-1">
+    <div class="modal-dialog modal-sm">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title text-danger">Confirm Delete</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <p>Delete <strong id="deleteTicker"></strong> from watchlist?</p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-danger" id="confirmDeleteBtn">Delete</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PROGRESS MODAL -->
+  <div id="refreshModal" class="modal fade" tabindex="-1">
+    <div class="modal-dialog modal-sm">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Refreshing Stocks</h5>
+        </div>
+        <div class="modal-body">
+          <div id="progressText">Starting...</div>
+          <div class="progress mt-2">
+            <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated bg-success" style="width: 0%"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- JavaScript -->
+  <script>
+  let tickerToDelete = null;
+
+  async function refreshSingle(ticker) {
+    const row = document.querySelector(`tr[data-ticker="${ticker}"]`);
+    const btn = row.querySelector('.refresh-btn');
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+    btn.disabled = true;
+
+    try {
+      const res = await fetch(`/refresh-single/${ticker}`, { method: 'POST' });
+      const data = await res.json();
+      if (data.status === 'success') {
+        location.reload();
+      } else {
+        btn.innerHTML = 'Error';
+      }
+    } catch (e) {
+      btn.innerHTML = 'Error';
+    }
+  }
+
+  function deleteStock(ticker) {
+    tickerToDelete = ticker;
+    document.getElementById('deleteTicker').textContent = ticker;
+    new bootstrap.Modal(document.getElementById('deleteModal')).show();
+  }
+
+  document.getElementById('confirmDeleteBtn').addEventListener('click', async () => {
+    if (!tickerToDelete) return;
+
+    try {
+      const res = await fetch(`/delete-stock/${tickerToDelete}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.status === 'success') {
+        location.reload();
+      } else {
+        alert('Failed to delete');
+      }
+    } catch (e) {
+      alert('Network error');
+    }
+  });
+
+  async function startRefreshAll() {
+    const modal = new bootstrap.Modal(document.getElementById('refreshModal'));
+    const progressText = document.getElementById('progressText');
+    const progressBar = document.getElementById('progressBar');
+    const status = document.getElementById('refreshStatus');
+
+    modal.show();
+    progressText.innerHTML = 'Refreshing all stocks...';
+    progressBar.style.width = '30%';
+
+    try {
+      const res = await fetch('/refresh-all-start', { method: 'POST' });
+      const data = await res.json();
+
+      let msg = `<strong>${data.refreshed}</strong> updated`;
+      if (data.failed > 0) {
+        msg += ` <span class="text-danger">| ${data.failed} failed</span>`;
+      }
+      progressText.innerHTML = msg;
+
+      progressBar.style.width = '100%';
+      progressBar.classList.remove('progress-bar-animated');
+
+      setTimeout(() => {
+        modal.hide();
+        status.innerHTML = `Refreshed ${data.refreshed}/${data.total} stocks`;
+        setTimeout(() => status.innerHTML = '', 5000);
+        location.reload();
+      }, 800);
+    } catch (e) {
+      progressText.innerHTML = '<span class="text-danger">Network error</span>';
+    }
+  }
+  </script>
+</body>
+</html>

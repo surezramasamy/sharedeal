@@ -1,0 +1,26 @@
+# Virtual Environment
+venv/
+env/
+.venv/
+
+# Database
+databases/
+*.db
+*.sqlite3
+
+# Secrets
+.env
+config.py
+
+# IDE
+.vscode/
+.idea/
+__pycache__/
+*.pyc
+
+# Logs
+*.log
+
+# OS
+Thumbs.db
+.DS_Store
