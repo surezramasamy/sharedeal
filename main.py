@@ -25,7 +25,10 @@ logger = logging.getLogger(__name__)
 # -------------------------------------------------
 # CONFIG
 # -------------------------------------------------
-DATABASE_URL = "sqlite:///./databases/stock_recommender.db"
+import os
+DATABASE_URL = os.getenv("DATABASE_URL")
+if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 NEWSAPI_KEY = "f44ef3442436422983ac6a1c353e5f21"
 NSE_CSV_PATH = "nse.csv"
 
