@@ -25,7 +25,22 @@ logger = logging.getLogger(__name__)
 # -------------------------------------------------
 # CONFIG
 # -------------------------------------------------
-DATABASE_URL = "sqlite:///./databases/stock_recommender.db"
+import os
+
+
+DATABASE_DIR = os.getenv("DATABASE_DIR", "./databases")
+os.makedirs(DATABASE_DIR, exist_ok=True)
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    # Fallback for local dev if env var not set
+    DATABASE_URL = f"sqlite:///{os.path.join(DATABASE_DIR, 'stock_recommender.db')}"
+
+# For SQLite only: pass this to allow multithreaded access
+if DATABASE_URL.startswith("sqlite"):
+    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+else:
+    engine = create_engine(DATABASE_URL)
 NEWSAPI_KEY = "f44ef3442436422983ac6a1c353e5f21"
 NSE_CSV_PATH = "nse.csv"
 
@@ -503,6 +518,8 @@ async def root_redirect():
 # -------------------------------------------------
 # RUN
 # -------------------------------------------------
+import os
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
