@@ -1,0 +1,44 @@
+<div id="refresh-all-container">
+    {% if status.status == 'running' %}
+        <div class="d-flex align-items-center">
+            <div class="spinner-border spinner-border-sm text-primary me-2" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <span class="text-primary me-3">
+                Refreshing: {{ status.current_ticker }} ({{ status.progress }}%)
+            </span>
+            <div class="progress" style="width: 150px; height: 10px;">
+                <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                     role="progressbar" 
+                     style="width: {{ status.progress }}%;" 
+                     aria-valuenow="{{ status.progress }}" 
+                     aria-valuemin="0" 
+                     aria-valuemax="100">
+                </div>
+            </div>
+        </div>
+        <span 
+            hx-get="/refresh-all-status" 
+            hx-trigger="every 1s" 
+            hx-swap="outerHTML" 
+            hx-target="#refresh-all-container">
+        </span>
+    {% elif status.status == 'complete' %}
+        <button id="refresh-all-btn"
+                hx-post="/refresh-all-start"
+                hx-target="#refresh-all-container"
+                hx-swap="outerHTML"
+                class="btn btn-primary"
+                hx-on::after-request="showToast('All stocks refreshed!')">
+            Refresh All Stocks
+        </button>
+    {% elif status.status == 'idle' or status.status == 'error' %}
+        <button id="refresh-all-btn"
+                hx-post="/refresh-all-start"
+                hx-target="#refresh-all-container"
+                hx-swap="outerHTML"
+                class="btn btn-primary">
+            Refresh All Stocks
+        </button>
+    {% endif %}
+</div>

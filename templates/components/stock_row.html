@@ -1,0 +1,117 @@
+<tr id="stock-row-{{ stock.ticker }}">
+  <td class="ps-4 fw-bold text-primary">{{ stock.ticker }}</td>
+  <td>{{ stock.company_name }}</td>
+
+  <td>
+    {% set rsi_val = "%.1f"|format(stock.rsi) if stock.rsi is number else "N/A" %}
+    <span class="badge {{ 'bg-success' if stock.rsi < 30 else 'bg-danger' if stock.rsi > 70 else 'bg-light text-dark' }}">
+        {{ rsi_val }}
+    </span>
+    <strong style="font-size: 1.4em; margin-left: 8px;">
+        {% if stock.final_score >= 0.6 %}
+          <span style="color: var(--success);">↑</span>
+        {% elif stock.final_score <= 0.4 %}
+          <span style="color: var(--danger);">↓</span>
+        {% else %}
+          <span style="color: gray;">→</span>
+        {% endif %}
+    </strong>
+  </td>
+
+  <td>
+    {% set cci_val = "%.1f"|format(stock.cci) if stock.cci is number else "N/A" %}
+    <span class="badge {{ 'bg-danger' if stock.cci > 100 else 'bg-success' if stock.cci < -100 else 'bg-light text-dark' }}">
+        {{ cci_val }}
+    </span>
+  </td>
+
+  <td>{{ stock.sentiment.split('(')[0].strip() }}</td>
+
+  <td>
+    <span class="badge bg-info text-dark">{{ stock.news_count }}</span>
+  </td>
+
+  <td>{{ "%.2f"|format(stock.sentiment_score) }}</td>
+  <td>{{ "%.2f"|format(stock.technical_score) }}</td>
+
+  <td class="fw-bold text-success">
+    {{ "%.2f"|format(stock.eps) if stock.eps is number and stock.eps > 0 else "N/A" }}
+  </td>
+
+  <td>
+    {% if stock.pe is number and stock.pe > 0 %}
+      <span class="badge 
+        {{ 'bg-success' if stock.pe < 20 else 'bg-warning text-dark' if stock.pe < 40 else 'bg-danger' }}">
+        {{ "%.2f"|format(stock.pe) }}
+      </span>
+    {% else %}
+      <span class="text-muted">N/A</span>
+    {% endif %}
+  </td>
+
+  <td>
+    {% set macd_status = 'Bullish' if 'Bullish' in stock.macd_signal else 'Bearish' if 'Bearish' in stock.macd_signal else 'N/A' %}
+    <span class="badge {{ 'bg-success' if macd_status == 'Bullish' else 'bg-danger' if macd_status == 'Bearish' else 'bg-secondary' }}">
+      {{ macd_status }}
+    </span>
+    <span class="indicator-detail" title="MACD / Signal Line">{{ stock.macd_signal.split('(')[0] }}</span>
+  </td>
+
+  <td>
+    {% set bb_status = 'Oversold' if 'Oversold' in stock.bb_signal else 'Overbought' if 'Overbought' in stock.bb_signal else 'Range' if 'Range' in stock.bb_signal else 'N/A' %}
+    <span class="badge {{ 'bg-success' if bb_status == 'Oversold' else 'bg-danger' if bb_status == 'Overbought' else 'bg-light text-dark' }}">
+      {{ bb_status }}
+    </span>
+    {% if "H:" in stock.bb_signal %}
+         <span class="indicator-detail" title="Upper / Lower Band Price">{{ stock.bb_signal.split('(')[1].replace(')', '') }}</span>
+    {% endif %}
+  </td>
+
+  <td>
+    <span class="badge {{ 'bg-success' if 'High' in stock.volume_signal else 'bg-danger' if 'Low' in stock.volume_signal else 'bg-light text-dark' }}">
+      {{ stock.volume_signal }}
+    </span>
+  </td>
+
+  <td class="fw-bold fs-5">
+    {{ "%.2f"|format(stock.final_score) }}
+  </td>
+
+  <td>
+    <span class="badge {{ stock.recommendation }}">{{ stock.recommendation }}</span>
+  </td>
+
+  <td class="text-center">
+    <div class="btn-group" role="group">
+      <button 
+        hx-post="/refresh-single/{{ stock.ticker }}"
+        hx-target="#stock-row-{{ stock.ticker }}"
+        hx-swap="outerHTML"
+        hx-on::after-request="showToast('Refreshed {{ stock.ticker }}')"
+        class="btn btn-sm btn-refresh text-white"
+        title="Refresh">
+        <i class="fas fa-sync-alt"></i>
+      </button>
+      <button 
+        hx-get="/news/{{ stock.ticker }}" 
+        hx-target="#news-modal .modal-body" 
+        hx-swap="innerHTML"
+        class="btn btn-sm btn-info text-white"
+        data-bs-toggle="modal" 
+        data-bs-target="#news-modal"
+        title="View News">
+        <i class="fas fa-newspaper"></i>
+      </button>
+      <button 
+        hx-delete="/delete-stock/{{ stock.ticker }}"
+        hx-swap="outerHTML"
+        hx-target="closest tr"
+        hx-confirm="Delete {{ stock.ticker }} permanently?"
+        hx-on::after-request="showToast('Deleted {{ stock.ticker }}')"
+        class="btn btn-sm btn-delete text-white"
+        title="Delete">
+        <i class="fas fa-trash"></i>
+      </button>
+    </div>
+  </td>
+</tr>
