@@ -26,20 +26,14 @@ import threading # Added missing import
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("StockApp")
 
-# DATABASE_URL = "sqlite:///./databases/stock_recommender.db"
-SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL")
+DATABASE_URL = "sqlite:///./databases/stock_recommender.db"
 NSE_CSV_PATH = "nse.csv"
 
-# NEWSAPI_KEY = "f44ef3442436422983ac6a1c353e5f21"
-# MARKETAUX_KEY = "yspwIQtwoqi3MgTAHYBwK9XKjkGjPboN4ad4TfNq"
-# FINNHUB_KEY = "d4vam39r01qnm7pqkmcgd4vam39r01qnm7pqkmd0"
-# NEWSDATA_KEY = "pub_bdc5fdeb66494d93b9468dbf758fd615"
-
-# Railway will automatically set these from the Variables tab
-
-MARKETAUX_KEY = os.getenv("MARKETAUX_KEY")
-FINNHUB_KEY = os.getenv("FINNHUB_KEY")
-NEWSDATA_KEY = os.getenv("NEWSDATA_KEY")
+# API Keys (Replace with your actual keys)
+NEWSAPI_KEY = "f44ef3442436422983ac6a1c353e5f21"
+MARKETAUX_KEY = "yspwIQtwoqi3MgTAHYBwK9XKjkGjPboN4ad4TfNq"
+FINNHUB_KEY = "d4vam39r01qnm7pqkmcgd4vam39r01qnm7pqkmd0"
+NEWSDATA_KEY = "pub_bdc5fdeb66494d93b9468dbf758fd615"
 
 # -------------------------------------------------
 # DATABASE SETUP
@@ -47,15 +41,7 @@ NEWSDATA_KEY = os.getenv("NEWSDATA_KEY")
 if not os.path.exists("./databases"):
     os.makedirs("./databases")
 
-# Read the connection string provided by Railway
-DATABASE_URL = os.getenv("DATABASE_URL")
-
-# Configure the engine
-engine = create_engine(DATABASE_URL)
-# Note: No 'connect_args' or 'check_same_thread' are needed for external DBs
-
-
-# engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
 
@@ -339,57 +325,54 @@ def get_technical_score(ticker: str):
 # -------------------------------------------------
 # NEWS & SENTIMENT
 # -------------------------------------------------
-import os
-import requests
-import logging
-from typing import List
-
-# Ensure you have MARKETAUX_KEY defined in your environment variables
-MARKETAUX_KEY = os.getenv("MARKETAUX_KEY")
-
-# --- NEW IMPLEMENTATION: MarketAux API ---
+# --- FIX 2: REMOVED @lru_cache and increased timeout ---
 def fetch_news(company_name: str) -> List[str]:
     """
-    Fetches the top 5 news article titles for a given company name using the MarketAux API.
+    Fetches the top news article titles for a given company name using the MarketAux API.
     """
     articles = []
     
     # 1. Check if the API key is available
     if not MARKETAUX_KEY:
-        logging.warning("MARKETAUX_KEY environment variable is not set.")
+        logger.warning("MARKETAUX_KEY environment variable is not set. Cannot fetch news.")
         return []
 
     try:
-        # MarketAux uses a 'search' endpoint and takes a keyword
+        # MarketAux endpoint for general news
         base_url = "https://api.marketaux.com/v1/news/all"
         
-        # We will use the 'filter_entities' parameter to target the company name
-        # We also limit to the top 5 articles (limit=5)
+        # Parameters to filter by keyword/company name, limit results, and set language
         params = {
             "api_token": MARKETAUX_KEY,
             "search": company_name,
             "language": "en",
             "limit": 5, 
-            "filter_entities": "true" # Filters results to only those tagged with entities
+            # Using filter_entities is helpful to ensure relevance if possible
+            "filter_entities": "true" 
         }
 
         # Increased timeout to 10 seconds for robustness
         r = requests.get(base_url, params=params, timeout=10)
-        r.raise_for_status() # Raises an HTTPError if the status code is 4xx or 5xx
+        r.raise_for_status() # Raises an HTTPError for 4XX/5XX responses
         
         data = r.json()
         
         if "data" in data:
-            # MarketAux returns results in the 'data' key
-            articles.extend([a["title"] for a in data["data"] if "title" in a])
+            # MarketAux returns article list under the 'data' key
+            # Extract the first 5 titles
+            articles.extend([a["title"] for a in data["data"] if "title" in a][:5])
             
+    except requests.exceptions.HTTPError as e:
+        # Catch specific HTTP errors (like 401 Unauthorized or 429 Rate Limit)
+        logger.error(f"MarketAux API HTTP error for {company_name}: {r.status_code} - {e}")
+        
     except requests.exceptions.RequestException as e:
-        # Catch network or HTTP errors
-        logging.error(f"MarketAux API request failed for {company_name}: {e}")
+        # Catch network or timeout errors
+        logger.error(f"MarketAux API connection failed for {company_name}: {e}")
         
     except Exception as e:
         # Catch other errors (like JSON parsing)
-        logging.error(f"Error processing MarketAux data for {company_name}: {e}")
+        logger.error(f"Error processing MarketAux data for {company_name}: {e}")
         
     # Use set to ensure uniqueness, then convert back to list
     return list(set(articles))
@@ -683,11 +666,6 @@ async def get_news_html(ticker: str):
     html += "</ul>"
     return HTMLResponse(html)
 
-# if __name__ == "__main__":
-#     import uvicorn
-#     uvicorn.run(app, host="0.0.0.0", port=8000)
-
-import uvicorn
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", 8000)) # Use PORT from env, default to 8000
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
