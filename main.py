@@ -26,13 +26,20 @@ import threading # Added missing import
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("StockApp")
 
-DATABASE_URL = "sqlite:///./databases/stock_recommender.db"
+# DATABASE_URL = "sqlite:///./databases/stock_recommender.db"
+SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL")
 NSE_CSV_PATH = "nse.csv"
 
-NEWSAPI_KEY = os.getenv("NEWSAPI_KEY", "YOUR_NEWSAPI_FALLBACK_KEY")
-MARKETAUX_KEY = os.getenv("MARKETAUX_KEY", "YOUR_MARKETAUX_FALLBACK_KEY")
-FINNHUB_KEY = os.getenv("FINNHUB_KEY", "YOUR_FINNHUB_FALLBACK_KEY")
-NEWSDATA_KEY = os.getenv("NEWSDATA_KEY", "YOUR_NEWSDATA_FALLBACK_KEY")
+# NEWSAPI_KEY = "f44ef3442436422983ac6a1c353e5f21"
+# MARKETAUX_KEY = "yspwIQtwoqi3MgTAHYBwK9XKjkGjPboN4ad4TfNq"
+# FINNHUB_KEY = "d4vam39r01qnm7pqkmcgd4vam39r01qnm7pqkmd0"
+# NEWSDATA_KEY = "pub_bdc5fdeb66494d93b9468dbf758fd615"
+
+# Railway will automatically set these from the Variables tab
+NEWSAPI_KEY = os.getenv("NEWSAPI_KEY")
+MARKETAUX_KEY = os.getenv("MARKETAUX_KEY")
+FINNHUB_KEY = os.getenv("FINNHUB_KEY")
+NEWSDATA_KEY = os.getenv("NEWSDATA_KEY")
 
 # -------------------------------------------------
 # DATABASE SETUP
@@ -40,7 +47,15 @@ NEWSDATA_KEY = os.getenv("NEWSDATA_KEY", "YOUR_NEWSDATA_FALLBACK_KEY")
 if not os.path.exists("./databases"):
     os.makedirs("./databases")
 
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+# Read the connection string provided by Railway
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+# Configure the engine
+engine = create_engine(DATABASE_URL)
+# Note: No 'connect_args' or 'check_same_thread' are needed for external DBs
+
+
+# engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
 
@@ -628,6 +643,11 @@ async def get_news_html(ticker: str):
     html += "</ul>"
     return HTMLResponse(html)
 
+# if __name__ == "__main__":
+#     import uvicorn
+#     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+import uvicorn
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int(os.getenv("PORT", 8000)) # Use PORT from env, default to 8000
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
