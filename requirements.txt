@@ -9,5 +9,5 @@ requests
 numpy
 python-multipart
 python-dotenv
-psycopg2-binary
+
 
