@@ -9,5 +9,6 @@ requests
 numpy
 python-multipart
 python-dotenv
+jinja2
 
 
