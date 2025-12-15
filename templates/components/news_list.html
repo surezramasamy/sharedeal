@@ -1,0 +1,24 @@
+{% if articles %}
+  <div class="list-group">
+    {% for article in articles %}
+    <a href="{{ article.url }}" target="_blank" class="list-group-item list-group-item-action d-block text-decoration-none">
+      <div class="d-flex w-100 justify-content-between">
+        <h6 class="mb-1 fw-bold text-primary">{{ article.title }}</h6>
+        <small class="text-muted">{{ article.published_at | default('N/A') }}</small>
+      </div>
+      <p class="mb-1 text-dark" style="font-size: 0.9rem;">{{ article.summary | default('No summary available.') }}</p>
+      <small class="text-secondary">Source: {{ article.source }}</small>
+    </a>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="alert alert-warning text-center" role="alert">
+    <h5>No Recent News Found for {{ ticker }}</h5>
+    <p class="mb-0">This is often caused by:</p>
+    <ul>
+        <li>**Expired/Invalid API Key:** Check your `NEWSAPI_KEY` in `main.py`.</li>
+        <li>**Rate Limiting:** If you've run many refreshes recently.</li>
+        <li>**News Not Available:** The API couldn't find recent articles for the company name.</li>
+    </ul>
+  </div>
+{% endif %}

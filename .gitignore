@@ -1,26 +1,8 @@
-# Virtual Environment
-venv/
-env/
-.venv/
-
 # Database
+databases/stock_recommender.db
 
-*.db
-*.sqlite3
-
-# Secrets
+# Environment
 .env
-config.py
-
-# IDE
-.vscode/
-.idea/
+venv/
 __pycache__/
 *.pyc
-
-# Logs
-*.log
-
-# OS
-Thumbs.db
-.DS_Store

@@ -1,56 +1,48 @@
-# main.py
 import os
 import logging
 from datetime import datetime, timedelta
-from typing import List, Dict
+from typing import List, Dict, Optional, Tuple, Any
 import time
-
 import pandas as pd
 import requests
 import yfinance as yf
 from textblob import TextBlob
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Boolean, func, text
+# --- FIX 1: Add 'func' to imports for robust SQLAlchemy usage ---
+from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Boolean, text, func 
 from sqlalchemy.orm import sessionmaker, declarative_base
-from sqlalchemy.exc import OperationalError
 from contextlib import contextmanager
-
 from fastapi import FastAPI, Request, Form
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response 
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# --- FIX 2: Removed lru_cache import as it's removed from fetch_news ---
+from concurrent.futures import ThreadPoolExecutor
+import numpy as np
+import threading # Added missing import
 
 # -------------------------------------------------
-# CONFIG
+# CONFIG & LOGGING
 # -------------------------------------------------
-import os
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger("StockApp")
 
-
-DATABASE_DIR = os.getenv("DATABASE_DIR", "./databases")
-os.makedirs(DATABASE_DIR, exist_ok=True)
-
-DATABASE_URL = os.getenv("DATABASE_URL")
-if not DATABASE_URL:
-    # Fallback for local dev if env var not set
-    DATABASE_URL = f"sqlite:///{os.path.join(DATABASE_DIR, 'stock_recommender.db')}"
-
-# For SQLite only: pass this to allow multithreaded access
-if DATABASE_URL.startswith("sqlite"):
-    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
-else:
-    engine = create_engine(DATABASE_URL)
-NEWSAPI_KEY = "f44ef3442436422983ac6a1c353e5f21"
+DATABASE_URL = "sqlite:///./databases/stock_recommender.db"
 NSE_CSV_PATH = "nse.csv"
 
+NEWSAPI_KEY = os.getenv("NEWSAPI_KEY", "YOUR_NEWSAPI_FALLBACK_KEY")
+MARKETAUX_KEY = os.getenv("MARKETAUX_KEY", "YOUR_MARKETAUX_FALLBACK_KEY")
+FINNHUB_KEY = os.getenv("FINNHUB_KEY", "YOUR_FINNHUB_FALLBACK_KEY")
+NEWSDATA_KEY = os.getenv("NEWSDATA_KEY", "YOUR_NEWSDATA_FALLBACK_KEY")
+
 # -------------------------------------------------
-# DB MODELS
+# DATABASE SETUP
 # -------------------------------------------------
+if not os.path.exists("./databases"):
+    os.makedirs("./databases")
+
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
-
 
 class StockModel(Base):
     __tablename__ = "stocks"
@@ -59,7 +51,6 @@ class StockModel(Base):
     company_name = Column(String)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
-
 
 class StockScoreModel(Base):
     __tablename__ = "stock_scores"
@@ -73,78 +64,42 @@ class StockScoreModel(Base):
     sentiment = Column(String)
     technical = Column(String)
     rsi = Column(Float)
+    cci = Column(Float)
     macd_signal = Column(String)
+    eps = Column(Float, default=0.0)
+    pe = Column(Float, default=0.0)
+    sma_signal = Column(String) 
+    bb_signal = Column(String)
+    volume_signal = Column(String) 
     news_count = Column(Integer)
     data_source = Column(String)
     analyzed_at = Column(DateTime, default=datetime.utcnow, index=True)
 
-
 Base.metadata.create_all(bind=engine)
 
-
 # -------------------------------------------------
-# MIGRATION: Add columns and fill NULLs
+# DB MIGRATION (Auto-adds columns if missing)
 # -------------------------------------------------
 def migrate_db():
     required_cols = {
-        "technical_score": "REAL",
-        "technical": "TEXT",
-        "rsi": "REAL",
-        "macd_signal": "TEXT",
-        "data_source": "TEXT"
+        "eps": "REAL", "pe": "REAL", "macd_signal": "TEXT", 
+        "data_source": "TEXT", "cci": "REAL", "sma_signal": "TEXT", 
+        "bb_signal": "TEXT", "volume_signal": "TEXT"
     }
     with engine.connect() as conn:
         res = conn.execute(text("PRAGMA table_info(stock_scores)"))
         existing = {row[1] for row in res}
         for col, typ in required_cols.items():
             if col not in existing:
-                conn.execute(text(f"ALTER TABLE stock_scores ADD COLUMN {col} {typ}"))
-                logger.info(f"Added missing column: {col}")
-
-        # Fill NULLs
-        fills = {
-            "rsi": "50.0",
-            "macd_signal": "'N/A'",
-            "data_source": "'N/A'",
-            "technical_score": "0.5",
-            "technical": "'Neutral'"
-        }
-        for col, default in fills.items():
-            conn.execute(text(f"UPDATE stock_scores SET {col} = {default} WHERE {col} IS NULL"))
-            logger.info(f"Filled NULLs in {col}")
-
+                try:
+                    conn.execute(text(f"ALTER TABLE stock_scores ADD COLUMN {col} {typ}"))
+                except: 
+                    logger.warning(f"Could not add column {col}. Database is likely up-to-date.")
         conn.commit()
-
-
 migrate_db()
 
-
 # -------------------------------------------------
-# CLEAN COMMA-JOINED TICKERS
-# -------------------------------------------------
-def clean_comma_joined_tickers():
-    with engine.connect() as conn:
-        res = conn.execute(text("SELECT id, ticker, company_name FROM stocks WHERE ticker LIKE '%,%'"))
-        bad = res.fetchall()
-        if not bad:
-            return
-        logger.info(f"Cleaning {len(bad)} malformed rows...")
-        for row_id, t_str, c_str in bad:
-            tickers = [t.strip() for t in t_str.split(",") if t.strip()]
-            companies = [c.strip() for c in c_str.split(",") if c.strip()]
-            for i, t in enumerate(tickers):
-                name = companies[i] if i < len(companies) else t
-                conn.execute(text("INSERT OR IGNORE INTO stocks (ticker, company_name) VALUES (:t, :n)"), {"t": t, "n": name})
-            conn.execute(text("DELETE FROM stocks WHERE id = :id"), {"id": row_id})
-        conn.commit()
-        logger.info("Cleaned comma-joined tickers.")
-
-
-clean_comma_joined_tickers()
-
-
-# -------------------------------------------------
-# DB SESSION
+# DB UTILS
 # -------------------------------------------------
 @contextmanager
 def get_db():
@@ -154,372 +109,525 @@ def get_db():
     finally:
         db.close()
 
-
 # -------------------------------------------------
-# TEMPLATES & APP
+# APP & TEMPLATES
 # -------------------------------------------------
 templates = Jinja2Templates(directory="templates")
 app = FastAPI()
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 # -------------------------------------------------
-# LOAD CSV
+# LOAD NSE STOCKS LIST
 # -------------------------------------------------
 def load_stock_pool() -> List[Dict]:
-    if not os.path.exists(NSE_CSV_PATH):
-        logger.error(f"CSV NOT FOUND: {NSE_CSV_PATH}")
-        return []
+    if not os.path.exists(NSE_CSV_PATH): return []
     try:
         df = pd.read_csv(NSE_CSV_PATH, dtype=str)
         df.columns = [c.strip() for c in df.columns]
-        required = ["SYMBOL", "NAME OF COMPANY"]
-        if not all(col in df.columns for col in required):
-            logger.error(f"CSV missing columns: {required}")
-            return []
-        df = df[required].rename(columns={"SYMBOL": "ticker", "NAME OF COMPANY": "name"})
+        if "SYMBOL" in df.columns:
+            df = df.rename(columns={"SYMBOL": "ticker", "NAME OF COMPANY": "name"})
+        elif "Symbol" in df.columns:
+            df = df.rename(columns={"Symbol": "ticker", "Company Name": "name"})
+            
         df["ticker"] = df["ticker"].str.strip() + ".NS"
         df["name"] = df["name"].str.strip()
-        pool = df.drop_duplicates(subset=["ticker"]).to_dict(orient="records")
-        logger.info(f"Loaded {len(pool)} stocks from CSV")
-        return pool
+        return df.drop_duplicates(subset=["ticker"]).to_dict(orient="records")
     except Exception as e:
-        logger.error(f"CSV load failed: {e}")
+        logger.error(f"Error loading CSV: {e}")
         return []
-
-
 stock_pool = load_stock_pool()
 
-
 # -------------------------------------------------
-# TECHNICAL ANALYSIS
+# CRITICAL DATA RETRIEVAL FIX (RETRY LOGIC)
 # -------------------------------------------------
-import yfinance as yf
-import pandas as pd
-from datetime import datetime, timedelta
-import time
-import logging
-
-logger = logging.getLogger(__name__)
-
-def get_technical_score(ticker: str) -> tuple[float, str, float, str, str]:
-    """
-    Returns: (score, label, rsi, signal_text, source)
-    - RSI only (MACD removed)
-    - Real RSI from yfinance (same as test_rsi_fixed.py)
-    - Fallback: 0.5, "Neutral (error)", 50.0, "N/A", "N/A"
-    """
-    end = datetime.utcnow()
-    start = end - timedelta(days=90)  # 90 days = safe for RSI
-
-    for attempt in range(3):
+def get_yfinance_data_with_retry(ticker: str) -> Tuple[pd.DataFrame, Dict]:
+    """Tries to fetch history (2y) and info with retries."""
+    max_retries = 3
+    history = pd.DataFrame()
+    info = {}
+    
+    for attempt in range(max_retries):
         try:
-            logger.info(f"[{ticker}] Fetching from yfinance (attempt {attempt + 1})")
-            symbol = ticker if ticker.endswith('.NS') else ticker + '.NS'
+            stock = yf.Ticker(ticker)
             
-            # FIX: Use list to avoid MultiIndex
-            df = yf.download([symbol], start=start, end=end, progress=False, auto_adjust=True)
-
-            if df.empty:
-                logger.warning(f"[{ticker}] Empty data")
-                if attempt == 2:
-                    return 0.5, "Neutral (error)", 50.0, "N/A", "N/A"
-                continue
-
-            # Extract Close safely
-            close = df['Close'][symbol] if isinstance(df.columns, pd.MultiIndex) else df['Close']
-            volume = df['Volume'][symbol] if isinstance(df.columns, pd.MultiIndex) else df['Volume']
-            open_p = df['Open'][symbol] if isinstance(df.columns, pd.MultiIndex) else df['Open']
-            high = df['High'][symbol] if isinstance(df.columns, pd.MultiIndex) else df['High']
-            low = df['Low'][symbol] if isinstance(df.columns, pd.MultiIndex) else df['Low']
-
-            df_clean = pd.DataFrame({
-                'Open': open_p, 'High': high, 'Low': low,
-                'Close': close, 'Volume': volume
-            }).dropna()
-
-            if len(df_clean) < 15:
-                logger.warning(f"[{ticker}] Not enough data: {len(df_clean)} rows")
-                if attempt == 2:
-                    return 0.5, "Neutral (error)", 50.0, "N/A", "N/A"
-                continue
-
-            # === RSI (from test_rsi_fixed.py) ===
-            delta = df_clean['Close'].diff()
-            gain = (delta.where(delta > 0, 0)).rolling(14).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-            rs = gain / (loss + 1e-6)
-            rsi_series = 100 - (100 / (1 + rs))
-            current_rsi = rsi_series.iloc[-1]
-
-            if pd.isna(current_rsi):
-                current_rsi = 50.0
-            else:
-                current_rsi = round(float(current_rsi), 1)
-
-            # === Candlestick Patterns (last 3 days) ===
-            df_clean['up'] = df_clean['Close'] > df_clean['Open']
-            df_clean['body_ratio'] = abs(df_clean['Close'] - df_clean['Open']) / (df_clean['High'] - df_clean['Low'] + 1e-6)
-            recent = df_clean.tail(3)
-
-            hammer = (recent['body_ratio'] < 0.3) & (recent['Low'] == df_clean['Low'].tail(3).min()) & recent['up']
-            engulfing_bull = (recent['up'].iloc[-1]) and (recent['Close'].iloc[-1] > recent['Open'].iloc[-2]) and (recent['Open'].iloc[-1] < recent['Close'].iloc[-2])
-            shooting_star = (recent['body_ratio'] < 0.3) & (recent['High'] == df_clean['High'].tail(3).max()) & ~recent['up']
-            engulfing_bear = (~recent['up'].iloc[-1]) and (recent['Close'].iloc[-1] < recent['Open'].iloc[-2]) and (recent['Open'].iloc[-1] > recent['Close'].iloc[-2])
-            vol_surge = df_clean['Volume'].iloc[-1] > df_clean['Volume'].rolling(10).mean().iloc[-1] * 1.5
-
-            # === Scoring (NO MACD) ===
-            rsi_score = 0.4 if current_rsi < 30 else -0.4 if current_rsi > 70 else 0.15 if 45 <= current_rsi <= 55 else 0
-            pattern_score = 0.25 if (hammer.any() or engulfing_bull) else -0.25 if (shooting_star.any() or engulfing_bear) else 0
-            volume_score = 0.1 if vol_surge else 0
-
-            raw = 0.5 + rsi_score + pattern_score + volume_score
-            score = round(max(0.0, min(1.0, raw)), 2)
-            label = "Strong Up" if score >= 0.8 else "Up" if score >= 0.6 else "Strong Down" if score <= 0.2 else "Down" if score <= 0.4 else "Neutral"
-
-            signal_text = f"RSI: {current_rsi}"
-            if current_rsi < 30: signal_text += " (Oversold)"
-            elif current_rsi > 70: signal_text += " (Overbought)"
-            elif 45 <= current_rsi <= 55: signal_text += " (Stable)"
-
-            logger.info(f"[{ticker}] RSI: {current_rsi} | Tech: {score} | Label: {label}")
-            return score, label, current_rsi, signal_text, "yfinance"
-
+            # Fetch History (Still fetching 2y, just in case)
+            history = stock.history(period="2y")
+            
+            # Fetch Info
+            info = stock.info
+            
+            if not history.empty and info:
+                logger.info(f"{ticker}: Data successfully retrieved on attempt {attempt + 1}.")
+                return history, info
+            
+            logger.warning(f"{ticker}: Partial or empty data on attempt {attempt + 1}. Retrying...")
+            time.sleep(1 + attempt) # Wait longer on subsequent failures
+            
+        except requests.exceptions.ReadTimeout:
+            logger.warning(f"{ticker}: Request timed out on attempt {attempt + 1}. Retrying...")
+            time.sleep(2 + attempt)
         except Exception as e:
-            logger.error(f"[{ticker}] Error (attempt {attempt + 1}): {e}")
-            if attempt < 2:
-                time.sleep(2)
-            else:
-                logger.error(f"[{ticker}] All attempts failed. Returning fallback.")
-                return 0.5, "Neutral (error)", 50.0, "N/A", "N/A"
+            logger.warning(f"{ticker}: General failure on attempt {attempt + 1}: {e}. Retrying...")
+            time.sleep(1 + attempt)
+            
+    logger.error(f"{ticker}: Failed to retrieve required data after {max_retries} attempts.")
+    return pd.DataFrame(), {}
 
 
 # -------------------------------------------------
-# SENTIMENT + FINAL SCORE
+# TECHNICAL ANALYSIS (SMA REMOVED, ROBUST ERROR HANDLING)
 # -------------------------------------------------
-def fetch_news(company: str):
-    try:
-        r = requests.get(
-            "https://newsapi.org/v2/everything",
-            params={"q": company, "language": "en", "pageSize": 10, "apiKey": NEWSAPI_KEY},
-            timeout=10
-        )
-        return r.json().get("articles", []) if r.status_code == 200 else []
-    except Exception as e:
-        logger.warning(f"News failed: {e}")
-        return []
-
-
-def compute_sentiment(articles):
-    if not articles:
-        return 0.5, "Neutral (no news)", 0
-    pol = []
-    for a in articles:
-        txt = (a.get("title") or "") + " " + (a.get("description") or "")
-        if txt.strip():
-            pol.append(TextBlob(txt).sentiment.polarity)
-    if not pol:
-        return 0.5, "Neutral (no text)", 0
-    avg = sum(pol) / len(pol)
-    score = round((avg + 1) / 2, 2)
-    label = "Positive" if score >= 0.60 else "Negative" if score <= 0.40 else "Neutral"
-    return score, label, len(pol)
-
-
-def decide(final_score):
-    return "BUY" if final_score >= 0.60 else "SELL" if final_score <= 0.40 else "HOLD"
-
-
-def analyze_stock(ticker: str, company: str) -> Dict:
-    articles = fetch_news(company)
-    sent_score, sent_label, news_cnt = compute_sentiment(articles)
-    tech_score, tech_label, rsi_val, macd_sig, data_src = get_technical_score(ticker)
-    final = round(0.7 * sent_score + 0.3 * tech_score, 2)
-
-    return {
-        "ticker": ticker,
-        "company_name": company,
-        "sentiment_score": sent_score,
-        "technical_score": tech_score,
-        "final_score": final,
-        "recommendation": decide(final),
-        "sentiment": sent_label,
-        "technical": tech_label,
-        "rsi": rsi_val,
-        "macd_signal": macd_sig,
-        "news_count": news_cnt,
-        "data_source": data_src,
-        "analyzed_at": datetime.utcnow(),
+def get_technical_score(ticker: str):
+    # Default response dictionary, returned on any failure
+    response = {
+        "score": 0.5, "trend": "Neutral", "rsi": 50.0, "cci": 0.0, 
+        "macd": "N/A (0.00 / 0.00)", 
+        "sma": "N/A (Removed)", # REMOVED SMA
+        "bb": "N/A (H: 0 / L: 0)", 
+        "eps": 0.0, "pe": 0.0, 
+        "vol": "Normal", "arrow": "→", "label": "Neutral"
     }
 
+    try:
+        hist, info = get_yfinance_data_with_retry(ticker)
+
+        # Need at least 26 days for MACD
+        if hist.empty or len(hist) < 26: 
+            logger.warning(f"{ticker}: Insufficient history or failed retrieval.")
+            return response
+
+        # --- Fundamentals ---
+        eps = info.get('trailingEps') or info.get('forwardEps') or 0.0
+        pe = info.get('trailingPE')
+        current_price = hist['Close'].iloc[-1]
+        
+        if (pe is None or pe == "None" or pe <= 0) and eps and eps > 0:
+            pe = current_price / eps
+        if pe is None or pe <= 0: pe = 0.0
+
+        # --- Data Prep ---
+        close = hist['Close']
+        high = hist['High']
+        low = hist['Low']
+        
+        # --- 1. RSI (14) ---
+        delta = close.diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+        rs = gain / (loss + 1e-10)
+        rsi = 100 - (100 / (1 + rs)).iloc[-1]
+        rsi = round(rsi, 2) if not pd.isna(rsi) else 50.0
+        
+        rsi_score = 0.0
+        if rsi < 30: rsi_score = 0.4
+        elif rsi > 70: rsi_score = -0.4
+
+        # --- 2. CCI (14) ---
+        tp = (high + low + close) / 3
+        sma_tp = tp.rolling(14).mean()
+        md_series = (tp.rolling(14).apply(lambda x: np.mean(np.abs(x - np.mean(x))), raw=True))
+        
+        if pd.isna(md_series.iloc[-1]) or md_series.iloc[-1] == 0:
+             cci_val = 0.0
+        else:
+            cci_series = (tp - sma_tp) / (0.015 * md_series.replace(0, 1e-6))
+            cci_val = cci_series.iloc[-1]
+        
+        cci_val = round(cci_val, 2) if not pd.isna(cci_val) else 0.0
+        
+        cci_score = 0.0
+        if cci_val > 100: cci_score = -0.2  # Overbought
+        elif cci_val < -100: cci_score = 0.2 # Oversold
+        
+        # --- 3. MACD (12, 26, 9) ---
+        exp12 = close.ewm(span=12, adjust=False).mean()
+        exp26 = close.ewm(span=26, adjust=False).mean()
+        macd_line = exp12 - exp26
+        signal_line = macd_line.ewm(span=9, adjust=False).mean()
+        
+        m_val = macd_line.iloc[-1] if not pd.isna(macd_line.iloc[-1]) else 0.0
+        s_val = signal_line.iloc[-1] if not pd.isna(signal_line.iloc[-1]) else 0.0
+        
+        macd_str = f"{m_val:.2f} / {s_val:.2f}"
+        macd_score = 0.35 if m_val > s_val else -0.35
+        macd_full_str = f"Bullish ({macd_str})" if m_val > s_val else f"Bearish ({macd_str})"
+        if abs(m_val - s_val) < 1e-4: macd_full_str = f"Neutral ({macd_str})"
+
+        # --- 4. SMA (REMOVED LOGIC) ---
+        sma_score = 0.0
+        sma_full_str = "N/A (Removed)"
+
+
+        # --- 5. Bollinger Bands (20, 2) ---
+        bb_sma = close.rolling(window=20).mean()
+        bb_std = close.rolling(window=20).std()
+        upper = bb_sma + 2 * bb_std
+        lower = bb_sma - 2 * bb_std
+        
+        u_val = upper.iloc[-1] if not pd.isna(upper.iloc[-1]) else 0.0
+        l_val = lower.iloc[-1] if not pd.isna(lower.iloc[-1]) else 0.0
+        curr = close.iloc[-1] if not pd.isna(close.iloc[-1]) else 0.0
+        
+        bb_score = 0.0
+        bb_full_str = f"N/A (H: {u_val:.0f} / L: {l_val:.0f})"
+        
+        if u_val > 0 and l_val > 0:
+            bb_display = f"(H: {u_val:.0f} / L: {l_val:.0f})"
+            if curr > u_val:
+                bb_full_str = f"Overbought {bb_display}"
+                bb_score = -0.15
+            elif curr < l_val:
+                bb_full_str = f"Oversold {bb_display}"
+                bb_score = 0.15
+            else:
+                bb_full_str = f"Range {bb_display}"
+                bb_score = 0.0
+
+        # --- 6. Volume ---
+        vol_avg = hist['Volume'].rolling(20).mean().iloc[-1]
+        vol_curr = hist['Volume'].iloc[-1]
+        
+        vol_str = "Normal"
+        if not pd.isna(vol_avg) and not pd.isna(vol_curr) and vol_avg > 0:
+            if vol_curr > (vol_avg * 1.5): vol_str = "High"
+            elif vol_curr < (vol_avg * 0.5): vol_str = "Low"
+
+        # --- Final Scoring ---
+        # SMA is removed from scoring
+        total_tech_score = 0.5 + rsi_score + cci_score + macd_score + bb_score
+        total_tech_score = max(0.0, min(1.0, total_tech_score))
+        total_tech_score = round(total_tech_score, 2)
+        
+        trend_arrow = "↑" if total_tech_score >= 0.6 else "↓" if total_tech_score <= 0.4 else "→"
+        trend_label = "Bullish" if total_tech_score >= 0.6 else "Bearish" if total_tech_score <= 0.4 else "Neutral"
+
+        return {
+            "score": total_tech_score,
+            "trend": trend_label,
+            "rsi": rsi,
+            "cci": cci_val,
+            "macd": macd_full_str, 
+            "sma": sma_full_str,   # Returns "N/A (Removed)"
+            "bb": bb_full_str,     
+            "eps": round(eps, 2),
+            "pe": round(pe, 2),
+            "vol": vol_str,
+            "arrow": trend_arrow,
+            "label": trend_label
+        }
+    except Exception as e:
+        logger.error(f"Critical Error in Technical Analysis for {ticker}: {e}")
+        # Return the robust default dictionary on error
+        return response
+
 
 # -------------------------------------------------
-# ROUTES
+# NEWS & SENTIMENT
+# -------------------------------------------------
+# --- FIX 2: REMOVED @lru_cache and increased timeout ---
+def fetch_news(company_name: str):
+    articles = []
+    # Using simplified loop for fast, basic news retrieval
+    try:
+        url = f"https://newsapi.org/v2/everything?q={company_name}&sortBy=publishedAt&language=en&apiKey={NEWSAPI_KEY}"
+        # Increased timeout from 2 to 10 seconds for robustness
+        r = requests.get(url, timeout=10).json() 
+        if "articles" in r:
+            articles.extend([a["title"] for a in r["articles"][:5]])
+    except Exception as e:
+        logger.warning(f"NewsAPI failed for {company_name}: {e}. Check API key or limit.")
+        
+    return list(set(articles))
+
+def analyze_sentiment(articles):
+    if not articles: return 0.5, "Neutral", 0
+    score_sum = sum(TextBlob(title).sentiment.polarity for title in articles)
+    avg_score = score_sum / len(articles)
+    final_sent = (avg_score + 1) / 2 # Normalize (-1 to 1) -> (0 to 1)
+    
+    if final_sent > 0.6: label = "Positive"
+    elif final_sent < 0.4: label = "Negative"
+    else: label = "Neutral"
+    return round(final_sent, 2), label, len(articles)
+
+# -------------------------------------------------
+# MAIN WRAPPER
+# -------------------------------------------------
+executor = ThreadPoolExecutor(max_workers=5)
+
+def analyze_stock_full(ticker, company_name):
+    news_future = executor.submit(fetch_news, company_name)
+    tech_future = executor.submit(get_technical_score, ticker)
+    
+    articles = news_future.result()
+    tech_data = tech_future.result()
+    
+    sent_score, sent_label, news_count = analyze_sentiment(articles)
+    # Give technicals a slight edge
+    final_score = round((tech_data["score"] * 0.6) + (sent_score * 0.4), 2)
+    recommendation = "BUY" if final_score >= 0.6 else "SELL" if final_score <= 0.4 else "HOLD"
+
+    # This dictionary returns the full keys needed by the database model
+    return {
+        "ticker": ticker,
+        "company_name": company_name,
+        "sentiment_score": sent_score,
+        "sentiment": sent_label,
+        "technical_score": tech_data["score"],
+        "technical": tech_data["trend"],
+        "rsi": tech_data["rsi"],
+        "cci": tech_data["cci"],
+        # Map the short keys from tech_data to the full keys for the DB
+        "macd_signal": tech_data["macd"],
+        "sma_signal": tech_data["sma"],  # Now contains "N/A (Removed)"
+        "bb_signal": tech_data["bb"],
+        "eps": tech_data["eps"],
+        "pe": tech_data["pe"],
+        "volume_signal": tech_data["vol"], 
+        "final_score": final_score,
+        "recommendation": recommendation,
+        "news_count": news_count,
+        "trend_arrow": tech_data["arrow"]
+    }
+
+# -------------------------------------------------
+# GLOBAL REFRESH STATUS (NEW)
+# -------------------------------------------------
+REFRESH_JOB_STATUS = {
+    "status": "idle", # idle, running, complete, error
+    "progress": 0,    # 0 to 100
+    "total": 0,
+    "current_ticker": ""
+}
+
+# -------------------------------------------------
+# BACKGROUND REFRESH LOGIC (NEW)
+# -------------------------------------------------
+def refresh_all_stocks_async():
+    """Performs the analysis for all stocks in the background."""
+    global REFRESH_JOB_STATUS
+    
+    with get_db() as db:
+        stocks_to_refresh = db.query(StockModel).all()
+
+    if not stocks_to_refresh:
+        REFRESH_JOB_STATUS = {"status": "complete", "progress": 100, "total": 0, "current_ticker": "No stocks to refresh."}
+        return
+
+    total_stocks = len(stocks_to_refresh)
+    REFRESH_JOB_STATUS.update({
+        "status": "running",
+        "progress": 0,
+        "total": total_stocks,
+        "start_time": datetime.now()
+    })
+    
+    logger.info(f"Starting full refresh for {total_stocks} stocks.")
+    
+    try:
+        for i, stock in enumerate(stocks_to_refresh):
+            ticker = stock.ticker
+            company_name = stock.company_name
+            
+            # Update job status for polling
+            REFRESH_JOB_STATUS.update({
+                "progress": int(((i + 1) / total_stocks) * 100),
+                "current_ticker": ticker
+            })
+            
+            # --- 1. Perform Analysis ---
+            data = analyze_stock_full(ticker, company_name)
+            
+            # --- 2. Save New Score ---
+            with get_db() as db:
+                db.query(StockScoreModel).filter(StockScoreModel.ticker == ticker).delete()
+                new_score = StockScoreModel(
+                    ticker=ticker, company_name=company_name,
+                    sentiment_score=data['sentiment_score'],
+                    technical_score=data['technical_score'],
+                    final_score=data['final_score'],
+                    recommendation=data['recommendation'],
+                    sentiment=data['sentiment'],
+                    technical=data['technical'],
+                    rsi=data['rsi'],
+                    cci=data['cci'],
+                    macd_signal=data['macd_signal'],
+                    sma_signal=data['sma_signal'],
+                    bb_signal=data['bb_signal'],
+                    eps=data['eps'],
+                    pe=data['pe'],
+                    volume_signal=data['volume_signal'],
+                    news_count=data['news_count'],
+                    data_source="YFinance"
+                )
+                db.add(new_score)
+                db.commit()
+
+            logger.info(f"Refreshed {ticker} ({i+1}/{total_stocks}). Score: {data['final_score']}")
+
+        REFRESH_JOB_STATUS["status"] = "complete"
+        logger.info("Full refresh job completed successfully.")
+
+    except Exception as e:
+        REFRESH_JOB_STATUS["status"] = "error"
+        logger.error(f"Error during full refresh: {e}")
+    finally:
+        # Final progress set to 100
+        REFRESH_JOB_STATUS["progress"] = 100
+
+# -------------------------------------------------
+# ROUTES (Updated with new endpoints)
 # -------------------------------------------------
 @app.get("/", response_class=HTMLResponse)
-async def home():
-    return RedirectResponse("/stock-select")
-
+async def home(): return RedirectResponse("/index")
 
 @app.get("/stock-select", response_class=HTMLResponse)
 async def stock_select(request: Request):
     return templates.TemplateResponse("stock_select.html", {"request": request})
 
-
 @app.get("/search-stocks", response_class=HTMLResponse)
 async def search_stocks(query: str = ""):
-    filtered = [s for s in stock_pool if query.lower() in s["ticker"].lower() or query.lower() in s["name"].lower()][:100]
-    html = "".join(
-        f'<label class="list-group-item d-flex justify-content-between align-items-center">'
-        f'<div><input type="checkbox" name="selectedTickers" value="{s["ticker"]}" class="form-check-input me-2">'
-        f'<strong>{s["ticker"]}</strong> - {s["name"]}</div></label>'
-        for s in filtered
-    ) or '<div class="list-group-item text-center text-muted">No stocks found.</div>'
-    return HTMLResponse(html)
+    if not query: return HTMLResponse("")
+    q = query.lower()
+    filtered = [s for s in stock_pool if q in s["ticker"].lower() or q in s["name"].lower()][:50]
+    html = ""
+    for s in filtered:
+        html += f"""
+        <div class="form-check">
+            <input class="form-check-input" type="checkbox" name="selectedTickers" value="{s['ticker']}" id="{s['ticker']}">
+            <label class="form-check-label" for="{s['ticker']}">
+                <strong>{s['ticker']}</strong> - {s['name']}
+            </label>
+        </div>
+        """
+    return HTMLResponse(html if html else "<p>No matches</p>")
 
-
-@app.post("/add-selected", response_class=HTMLResponse)
+@app.post("/add-selected")
 async def add_selected(selectedTickers: List[str] = Form(...)):
-    if not selectedTickers:
-        return HTMLResponse('<div class="alert alert-danger">Select at least one stock.</div>'
-                            '<div class="mt-3 text-center"><a href="/stock-select" class="btn btn-primary">Back</a></div>')
-
-    added = []
-    skipped = []
     with get_db() as db:
         for t in selectedTickers:
-            if db.query(StockModel).filter(StockModel.ticker == t).first():
-                skipped.append(t)
-                continue
             name = next((s["name"] for s in stock_pool if s["ticker"] == t), t)
-            db.add(StockModel(ticker=t, company_name=name))
-            added.append(t)
-            result = analyze_stock(t, name)
-            db.add(StockScoreModel(**result))
-            logger.info(f"Added {t} | RSI: {result['rsi']} | MACD: {result['macd_signal']} | Final: {result['final_score']}")
+            
+            # 1. Ensure stock exists in StockModel
+            if not db.query(StockModel).filter(StockModel.ticker == t).first():
+                db.add(StockModel(ticker=t, company_name=name))
+                db.commit() 
+
+            # 2. Analyze
+            data = analyze_stock_full(t, name)
+            
+            # 3. Remove old score & add new
+            db.query(StockScoreModel).filter(StockScoreModel.ticker == t).delete()
+            db.add(StockScoreModel(
+                ticker=t, company_name=name,
+                sentiment_score=data['sentiment_score'],
+                technical_score=data['technical_score'],
+                final_score=data['final_score'],
+                recommendation=data['recommendation'],
+                sentiment=data['sentiment'],
+                technical=data['technical'],
+                rsi=data['rsi'],
+                cci=data['cci'],
+                macd_signal=data['macd_signal'],
+                sma_signal=data['sma_signal'], 
+                bb_signal=data['bb_signal'],
+                eps=data['eps'],
+                pe=data['pe'],
+                volume_signal=data['volume_signal'],
+                news_count=data['news_count'],
+                data_source="YFinance"
+            ))
         db.commit()
+    return HTMLResponse('<div class="alert alert-success">Stocks Added!</div><a href="/index" class="btn btn-primary">Go to Dashboard</a>')
 
-    msg = f'<div class="alert alert-success">Added {len(added)} stock(s)</div>'
-    if skipped: msg += f'<div class="alert alert-info">Skipped {len(skipped)}</div>'
-    msg += '<div class="mt-3 text-center"><a href="/index" class="btn btn-success btn-lg">View Results</a></div>'
-    return HTMLResponse(msg)
-
-
-@app.get("/index", response_class=HTMLResponse)
+@app.get("/index")
 async def index(request: Request):
     with get_db() as db:
-        subq = db.query(StockScoreModel.ticker, func.max(StockScoreModel.analyzed_at).label("max_dt")).group_by(StockScoreModel.ticker).subquery()
-        latest = db.query(StockScoreModel).join(subq, (StockScoreModel.ticker == subq.c.ticker) & (StockScoreModel.analyzed_at == subq.c.max_dt)).all()
-        latest = sorted(latest, key=lambda x: x.final_score, reverse=True)
-    return templates.TemplateResponse("index.html", {"request": request, "stocks": latest})
+        # Note: Since your refresh/add logic deletes old scores, this simple query is correct.
+        # If you ever switch back to keeping historical scores, you must use 
+        # func.max(StockScoreModel.id) as shown in the previous fix.
+        stocks = db.query(StockScoreModel).order_by(StockScoreModel.final_score.desc()).all()
+    return templates.TemplateResponse("index.html", {"request": request, "stocks": stocks})
 
-# -------------------------------------------------
-# REFRESH
-# -------------------------------------------------
-
-# Keep this if you want a simple sync version (for <10 stocks)
-@app.post("/refresh-all", response_class=HTMLResponse)
-async def refresh_all(request: Request):
-    with get_db() as db:
-        stocks = db.query(StockModel).filter(StockModel.is_active == True).all()
-        refreshed = failed = 0
-        for stock in stocks:
-            try:
-                result = analyze_stock(stock.ticker, stock.company_name)
-                db.add(StockScoreModel(**result))
-                refreshed += 1
-            except Exception as e:
-                logger.error(f"Failed {stock.ticker}: {e}")
-                failed += 1
-        db.commit()
-    failed_msg = f'<p class="text-warning"><strong>{failed}</strong> failed</p>' if failed else ''
-    msg = f"""
-    <div class="alert alert-success text-center">
-        <h4>Refresh Complete!</h4>
-        <p><strong>{refreshed}</strong> stocks updated</p>
-        {failed_msg}
-        <a href="/index" class="btn btn-primary mt-2">Back</a>
-    </div>
-    """
-    return HTMLResponse(msg)
+# NEW ROUTE: Start the Refresh All Job
+@app.post("/refresh-all-start")
+async def refresh_all_start(request: Request):
+    global REFRESH_JOB_STATUS
+    if REFRESH_JOB_STATUS["status"] in ["running"]:
+        # Return status update if already running
+        return templates.TemplateResponse("components/refresh_status.html", {"request": request, "status": REFRESH_JOB_STATUS})
     
-# === INDIVIDUAL REFRESH ===
+    # Reset status and start the job in the background thread
+    REFRESH_JOB_STATUS = {"status": "running", "progress": 0, "total": 0, "current_ticker": ""}
+    # Switched to threading.Thread to ensure it runs even in a non-async Executor environment
+    threading.Thread(target=refresh_all_stocks_async, daemon=True).start()
+    
+    # Return the initial status component for HTMX to start polling
+    return templates.TemplateResponse("components/refresh_status.html", {"request": request, "status": REFRESH_JOB_STATUS})
+
+# NEW ROUTE: Get the Refresh All Status (for HTMX Polling)
+@app.get("/refresh-all-status", response_class=HTMLResponse)
+async def refresh_all_status(request: Request):
+    global REFRESH_JOB_STATUS
+    # This endpoint returns the status fragment, which HTMX will check
+    return templates.TemplateResponse("components/refresh_status.html", {"request": request, "status": REFRESH_JOB_STATUS})
+
 @app.post("/refresh-single/{ticker}")
-async def refresh_single(ticker: str):
+async def refresh_single(ticker: str, request: Request):
     with get_db() as db:
         stock = db.query(StockModel).filter(StockModel.ticker == ticker).first()
-        if not stock:
-            return {"status": "error", "message": "Not found"}
-        try:
-            result = analyze_stock(stock.ticker, stock.company_name)
-            db.add(StockScoreModel(**result))
-            db.commit()
-            return {"status": "success", "ticker": ticker}
-        except Exception as e:
-            logger.error(f"Refresh failed {ticker}: {e}")
-            return {"status": "error", "ticker": ticker}
+        if not stock: 
+            return HTMLResponse(f"<tr><td colspan='17'>Stock {ticker} not found.</td></tr>")
+        
+        data = analyze_stock_full(ticker, stock.company_name)
+        
+        # Delete old score & add new
+        db.query(StockScoreModel).filter(StockScoreModel.ticker == ticker).delete()
+        new_score = StockScoreModel(
+            ticker=ticker, company_name=stock.company_name,
+            sentiment_score=data['sentiment_score'],
+            technical_score=data['technical_score'],
+            final_score=data['final_score'],
+            recommendation=data['recommendation'],
+            sentiment=data['sentiment'],
+            technical=data['technical'],
+            rsi=data['rsi'],
+            cci=data['cci'],
+            macd_signal=data['macd_signal'],
+            sma_signal=data['sma_signal'],
+            bb_signal=data['bb_signal'],
+            eps=data['eps'],
+            pe=data['pe'],
+            volume_signal=data['volume_signal'],
+            news_count=data['news_count'],
+            data_source="YFinance"
+        )
+        db.add(new_score)
+        db.commit()
 
-# === REFRESH ALL (One-by-one, non-blocking) ===
+    # Need to return the complete table row (TR) for HTMX to swap correctly
+    return templates.TemplateResponse("components/stock_row.html", {"request": request, "stock": new_score})
 
-@app.post("/refresh-all-start")
-async def refresh_all_start():
-    with get_db() as db:
-        stocks = db.query(StockModel).filter(StockModel.is_active == True).all()
-        total = len(stocks)
-        refreshed = failed = 0
-        for stock in stocks:
-            try:
-                result = analyze_stock(stock.ticker, stock.company_name)
-                db.add(StockScoreModel(**result))
-                refreshed += 1
-            except Exception as e:
-                logger.error(f"Failed {stock.ticker}: {e}")
-                failed += 1
-            db.commit()  # Commit per stock = safe
-        return {
-            "total": total,
-            "refreshed": refreshed,
-            "failed": failed,
-            "message": f"{refreshed}/{total} updated"
-        }
-
-
-# === DELETE STOCK ===
 @app.delete("/delete-stock/{ticker}")
 async def delete_stock(ticker: str):
-    """
-    DELETE /delete-stock/RELIANCE.NS
-    → Removes stock + all its scores from DB
-    """
     with get_db() as db:
-        # Find stock
-        stock = db.query(StockModel).filter(StockModel.ticker == ticker).first()
-        if not stock:
-            return {"status": "error", "message": "Stock not found"}
-
-        # Delete all scores
-        deleted_scores = db.query(StockScoreModel).filter(StockScoreModel.ticker == ticker).delete()
-        
-        # Delete stock
-        db.delete(stock)
+        db.query(StockModel).filter(StockModel.ticker == ticker).delete()
+        db.query(StockScoreModel).filter(StockScoreModel.ticker == ticker).delete()
         db.commit()
+    # Return an empty Response with a successful status code (200)
+    return Response(status_code=200)
 
-        logger.info(f"Deleted {ticker} | Removed {deleted_scores} score(s)")
-        return {"status": "success", "ticker": ticker}
-        
-@app.get("/")
-async def root_redirect():
-    return RedirectResponse(url="/index")
-# -------------------------------------------------
-# RUN
-# -------------------------------------------------
-import os
+@app.get("/news/{ticker}")
+async def get_news_html(ticker: str):
+    with get_db() as db:
+        s = db.query(StockModel).filter(StockModel.ticker == ticker).first()
+        name = s.company_name if s else ticker
+    articles = fetch_news(name)
+    html = f"<h5>Latest News for {name}</h5><ul>"
+    for a in articles: html += f"<li>{a}</li>"
+    html += "</ul>"
+    return HTMLResponse(html)
+
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.getenv("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(app, host="0.0.0.0", port=8000)
