@@ -36,7 +36,7 @@ NSE_CSV_PATH = "nse.csv"
 # NEWSDATA_KEY = "pub_bdc5fdeb66494d93b9468dbf758fd615"
 
 # Railway will automatically set these from the Variables tab
-NEWSAPI_KEY = os.getenv("NEWSAPI_KEY")
+
 MARKETAUX_KEY = os.getenv("MARKETAUX_KEY")
 FINNHUB_KEY = os.getenv("FINNHUB_KEY")
 NEWSDATA_KEY = os.getenv("NEWSDATA_KEY")
@@ -339,19 +339,59 @@ def get_technical_score(ticker: str):
 # -------------------------------------------------
 # NEWS & SENTIMENT
 # -------------------------------------------------
-# --- FIX 2: REMOVED @lru_cache and increased timeout ---
-def fetch_news(company_name: str):
+import os
+import requests
+import logging
+from typing import List
+
+# Ensure you have MARKETAUX_KEY defined in your environment variables
+MARKETAUX_KEY = os.getenv("MARKETAUX_KEY")
+
+# --- NEW IMPLEMENTATION: MarketAux API ---
+def fetch_news(company_name: str) -> List[str]:
+    """
+    Fetches the top 5 news article titles for a given company name using the MarketAux API.
+    """
     articles = []
-    # Using simplified loop for fast, basic news retrieval
+    
+    # 1. Check if the API key is available
+    if not MARKETAUX_KEY:
+        logging.warning("MARKETAUX_KEY environment variable is not set.")
+        return []
+
     try:
-        url = f"https://newsapi.org/v2/everything?q={company_name}&sortBy=publishedAt&language=en&apiKey={NEWSAPI_KEY}"
-        # Increased timeout from 2 to 10 seconds for robustness
-        r = requests.get(url, timeout=10).json() 
-        if "articles" in r:
-            articles.extend([a["title"] for a in r["articles"][:5]])
-    except Exception as e:
-        logger.warning(f"NewsAPI failed for {company_name}: {e}. Check API key or limit.")
+        # MarketAux uses a 'search' endpoint and takes a keyword
+        base_url = "https://api.marketaux.com/v1/news/all"
         
+        # We will use the 'filter_entities' parameter to target the company name
+        # We also limit to the top 5 articles (limit=5)
+        params = {
+            "api_token": MARKETAUX_KEY,
+            "search": company_name,
+            "language": "en",
+            "limit": 5, 
+            "filter_entities": "true" # Filters results to only those tagged with entities
+        }
+
+        # Increased timeout to 10 seconds for robustness
+        r = requests.get(base_url, params=params, timeout=10)
+        r.raise_for_status() # Raises an HTTPError if the status code is 4xx or 5xx
+        
+        data = r.json()
+        
+        if "data" in data:
+            # MarketAux returns results in the 'data' key
+            articles.extend([a["title"] for a in data["data"] if "title" in a])
+            
+    except requests.exceptions.RequestException as e:
+        # Catch network or HTTP errors
+        logging.error(f"MarketAux API request failed for {company_name}: {e}")
+        
+    except Exception as e:
+        # Catch other errors (like JSON parsing)
+        logging.error(f"Error processing MarketAux data for {company_name}: {e}")
+        
+    # Use set to ensure uniqueness, then convert back to list
     return list(set(articles))
 
 def analyze_sentiment(articles):
