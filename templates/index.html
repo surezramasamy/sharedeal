@@ -41,6 +41,18 @@
       padding: 0.4rem 0.8rem;
       font-size: 0.85rem;
     }
+    /* FORCE GREEN PREDICT BUTTON - WORKS ON RAILWAY, LOCAL, MOBILE */
+    .btn-predict {
+      background: #06d6a0 !important;
+      border-color: #06d6a0 !important;
+      color: white !important;
+      padding: 0.4rem 0.8rem;
+      font-size: 0.85rem;
+    }
+    .btn-predict:hover {
+      background: #05b591 !important;
+      border-color: #05b591 !important;
+    }
     .badge.BUY { background: var(--success); color: white; }
     .badge.SELL { background: var(--danger); color: white; }
     .badge.HOLD { background: var(--warning); color: #000; }
@@ -80,14 +92,9 @@
         <a href="/stock-select" class="btn btn-outline-primary">
           <i class="fas fa-plus"></i> Add Stocks
         </a>
-     <div id="refresh-all-container">
-    <span 
-        hx-trigger="load" 
-        hx-get="/refresh-all-status" 
-        hx-target="#refresh-all-container" 
-        hx-swap="outerHTML">
-    </span>
-</div>
+        <div id="refresh-all-container">
+          <span hx-trigger="load" hx-get="/refresh-all-status" hx-target="#refresh-all-container" hx-swap="outerHTML"></span>
+        </div>
       </div>
     </div>
 
@@ -103,7 +110,7 @@
       <div class="card bg-white mx-3">
         <div class="card-body p-0">
           <div class="table-responsive">
-            <table class="table table-hover align-middle mb-0">
+            <table class="table table-hover align-middle mb-0 table-sm">
               <thead>
                 <tr>
                   <th class="ps-4">Ticker</th>
@@ -168,8 +175,7 @@
 
                   <td>
                     {% if stock.pe is number and stock.pe > 0 %}
-                      <span class="badge 
-                        {{ 'bg-success' if stock.pe < 20 else 'bg-warning text-dark' if stock.pe < 40 else 'bg-danger' }}">
+                      <span class="badge {{ 'bg-success' if stock.pe < 20 else 'bg-warning text-dark' if stock.pe < 40 else 'bg-danger' }}">
                         {{ "%.2f"|format(stock.pe) }}
                       </span>
                     {% else %}
@@ -221,12 +227,12 @@
                         <i class="fas fa-sync-alt"></i>
                       </button>
 
-                      <!-- NEW: PREDICT BUTTON -->
+                      <!-- GUARANTEED GREEN PREDICT BUTTON -->
                       <button 
                         hx-get="/predict/{{ stock.ticker }}"
                         hx-target="#modalContainer"
                         hx-swap="innerHTML"
-                        class="btn btn-sm btn-success text-white me-1"
+                        class="btn btn-sm btn-predict text-white me-1"
                         title="Predict Next 6 Days">
                         <i class="fas fa-crystal-ball"></i>
                       </button>
@@ -263,18 +269,16 @@
       </div>
     {% endif %}
 
-    <!-- MODAL CONTAINER FOR PREDICTION (MUST BE OUTSIDE THE LOOP) -->
+    <!-- MODAL CONTAINER FOR PREDICTION -->
     <div id="modalContainer"></div>
   </div>
 
-  <!-- Existing News Modal -->
+  <!-- News Modal -->
   <div class="modal fade" id="news-modal" tabindex="-1">
     <div class="modal-dialog modal-lg modal-dialog-scrollable">
       <div class="modal-content">
         <div class="modal-header border-0 pb-2">
-          <h5 class="modal-title fw-bold">
-            Latest News (Last 5 Days)
-          </h5>
+          <h5 class="modal-title fw-bold">Latest News (Last 5 Days)</h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
         </div>
         <div class="modal-body pt-2">
@@ -287,7 +291,7 @@
     </div>
   </div>
 
-  <!-- Toast Notification -->
+  <!-- Toast -->
   <div class="position-fixed bottom-0 end-0 p-3" style="z-index: 1100">
     <div id="liveToast" class="toast align-items-center text-white bg-success border-0" role="alert">
       <div class="d-flex">
@@ -305,26 +309,24 @@
       const toast = new bootstrap.Toast(toastEl);
       toast.show();
     }
-  </script>
 
-  <script>
-  // Automatically show the prediction modal after HTMX loads it
-  document.body.addEventListener('htmx:afterSwap', function(evt) {
-    if (evt.detail.target.id === 'modalContainer') {
-      const modalEl = document.getElementById('predictModal');
-      if (modalEl) {
-        const modal = new bootstrap.Modal(modalEl);
-        modal.show();
+    // Auto-show prediction modal
+    document.body.addEventListener('htmx:afterSwap', function(evt) {
+      if (evt.detail.target.id === 'modalContainer') {
+        const modalEl = document.getElementById('predictModal');
+        if (modalEl) {
+          const modal = new bootstrap.Modal(modalEl);
+          modal.show();
+        }
       }
-    }
-  });
+    });
 
-  // Optional: Clean up modal when closed (removes old content)
-  document.body.addEventListener('hidden.bs.modal', function(evt) {
-    if (evt.target.id === 'predictModal') {
-      document.getElementById('modalContainer').innerHTML = '';
-    }
-  });
-</script>
+    // Clean up after close
+    document.body.addEventListener('hidden.bs.modal', function(evt) {
+      if (evt.target.id === 'predictModal') {
+        document.getElementById('modalContainer').innerHTML = '';
+      }
+    });
+  </script>
 </body>
 </html>
