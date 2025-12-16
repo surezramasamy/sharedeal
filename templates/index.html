@@ -227,15 +227,17 @@
                         <i class="fas fa-sync-alt"></i>
                       </button>
 
-                      <!-- GUARANTEED GREEN PREDICT BUTTON -->
-                      <button 
-                        hx-get="/predict/{{ stock.ticker }}"
-                        hx-target="#modalContainer"
-                        hx-swap="innerHTML"
-                        class="btn btn-sm btn-predict text-white me-1"
-                        title="Predict Next 6 Days">
-                        <i class="fas fa-crystal-ball"></i>
-                      </button>
+                     <button 
+                      hx-get="/predict/{{ stock.ticker }}"
+                      hx-target="#modalContainer"
+                      hx-swap="innerHTML"
+                      class="btn btn-sm text-white me-1"
+                      style="background-color: #06d6a0 !important; border-color: #06d6a0 !important; padding: 0.4rem 0.8rem; font-size: 0.85rem;"
+                      onmouseover="this.style.backgroundColor='#05b591'; this.style.borderColor='#05b591';"
+                      onmouseout="this.style.backgroundColor='#06d6a0'; this.style.borderColor='#06d6a0';"
+                      title="Predict Next 6 Days">
+                      <i class="fas fa-crystal-ball"></i> Predict
+                    </button>
 
                       <button 
                         hx-get="/news/{{ stock.ticker }}" 
