@@ -1,14 +1,21 @@
 fastapi
 uvicorn
-gunicorn
-sqlalchemy
-pandas
-yfinance
-textblob
-requests
-numpy
-python-multipart
-python-dotenv
 jinja2
+python-multipart
+httpx
+requests
+yfinance
+pandas
+numpy
+torch
+torchvision
+torchaudio
+scikit-learn
+matplotlib
+textblob
+sqlalchemy
+python-dateutil
+tqdm
+
 
 

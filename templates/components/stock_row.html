@@ -112,6 +112,23 @@
         title="Delete">
         <i class="fas fa-trash"></i>
       </button>
+
+      <!-- Inside the <td> for actions in stock_row.html -->
+<td class="text-center">
+  <button class="btn btn-sm btn-info me-1" 
+          hx-get="/predict/{{ stock.ticker }}" 
+          hx-target="#modalContainer" 
+          hx-swap="innerHTML">
+    Predict
+  </button>
+  <button class="btn btn-sm btn-danger" 
+          hx-delete="/delete-stock/{{ stock.ticker }}" 
+          hx-target="closest tr" 
+          hx-swap="outerHTML"
+          hx-confirm="Delete {{ stock.ticker }}?">
+    Delete
+  </button>
+</td>
     </div>
   </td>
 </tr>

@@ -117,7 +117,6 @@
                   <th>EPS</th>
                   <th>P/E</th>
                   <th>MACD</th>
-                  
                   <th>Bollinger</th>
                   <th>Volume</th>
                   <th>Final Score</th>
@@ -186,9 +185,6 @@
                     <span class="indicator-detail" title="MACD / Signal Line">{{ stock.macd_signal.split('(')[0] }}</span>
                   </td>
 
-                  
-                    
-
                   <td>
                     {% set bb_status = 'Oversold' if 'Oversold' in stock.bb_signal else 'Overbought' if 'Overbought' in stock.bb_signal else 'Range' if 'Range' in stock.bb_signal else 'N/A' %}
                     <span class="badge {{ 'bg-success' if bb_status == 'Oversold' else 'bg-danger' if bb_status == 'Overbought' else 'bg-light text-dark' }}">
@@ -224,6 +220,17 @@
                         title="Refresh">
                         <i class="fas fa-sync-alt"></i>
                       </button>
+
+                      <!-- NEW: PREDICT BUTTON -->
+                      <button 
+                        hx-get="/predict/{{ stock.ticker }}"
+                        hx-target="#modalContainer"
+                        hx-swap="innerHTML"
+                        class="btn btn-sm btn-success text-white me-1"
+                        title="Predict Next 6 Days">
+                        <i class="fas fa-crystal-ball"></i>
+                      </button>
+
                       <button 
                         hx-get="/news/{{ stock.ticker }}" 
                         hx-target="#news-modal .modal-body" 
@@ -234,6 +241,7 @@
                         title="View News">
                         <i class="fas fa-newspaper"></i>
                       </button>
+
                       <button 
                         hx-delete="/delete-stock/{{ stock.ticker }}"
                         hx-swap="outerHTML"
@@ -254,8 +262,12 @@
         </div>
       </div>
     {% endif %}
+
+    <!-- MODAL CONTAINER FOR PREDICTION (MUST BE OUTSIDE THE LOOP) -->
+    <div id="modalContainer"></div>
   </div>
 
+  <!-- Existing News Modal -->
   <div class="modal fade" id="news-modal" tabindex="-1">
     <div class="modal-dialog modal-lg modal-dialog-scrollable">
       <div class="modal-content">
@@ -275,6 +287,7 @@
     </div>
   </div>
 
+  <!-- Toast Notification -->
   <div class="position-fixed bottom-0 end-0 p-3" style="z-index: 1100">
     <div id="liveToast" class="toast align-items-center text-white bg-success border-0" role="alert">
       <div class="d-flex">
@@ -286,23 +299,32 @@
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script>
-    // Note: The /refresh-all-status and /refresh-all-start endpoints were not in your Python code, 
-    // so this function is disabled for now (the button is marked WIP). 
-    // It's included for future implementation.
-    function checkRefreshStatus() {
-      // Stub function: if you implement full refresh in Python, enable this HTMX call
-    }
-
     function showToast(message) {
       const toastEl = document.getElementById('liveToast');
       toastEl.querySelector('.toast-body').textContent = message;
       const toast = new bootstrap.Toast(toastEl);
       toast.show();
     }
-
-    document.addEventListener('DOMContentLoaded', () => {
-        // Initial checkRefreshStatus is removed since the endpoints are missing, preventing console errors.
-    });
   </script>
+
+  <script>
+  // Automatically show the prediction modal after HTMX loads it
+  document.body.addEventListener('htmx:afterSwap', function(evt) {
+    if (evt.detail.target.id === 'modalContainer') {
+      const modalEl = document.getElementById('predictModal');
+      if (modalEl) {
+        const modal = new bootstrap.Modal(modalEl);
+        modal.show();
+      }
+    }
+  });
+
+  // Optional: Clean up modal when closed (removes old content)
+  document.body.addEventListener('hidden.bs.modal', function(evt) {
+    if (evt.target.id === 'predictModal') {
+      document.getElementById('modalContainer').innerHTML = '';
+    }
+  });
+</script>
 </body>
 </html>

@@ -19,6 +19,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import threading # Added missing import
+from fastapi import BackgroundTasks
+import torch
+import torch.nn as nn
+from sklearn.preprocessing import MinMaxScaler
+
+from datetime import timedelta
+
+import matplotlib.pyplot as plt
+from io import BytesIO
+import base64
 
 # -------------------------------------------------
 # CONFIG & LOGGING
@@ -665,6 +675,180 @@ async def get_news_html(ticker: str):
     for a in articles: html += f"<li>{a}</li>"
     html += "</ul>"
     return HTMLResponse(html)
+
+# -------------------------------------------------
+# LSTM PREDICTION FOR SINGLE STOCK (NEW)
+# -------------------------------------------------
+import torch
+from sklearn.preprocessing import MinMaxScaler
+
+def run_lstm_prediction(ticker: str) -> Optional[Dict]:
+    """Runs the LSTM forecast for a single ticker and returns results with chart."""
+    try:
+        # Fetch more historical data for better training
+        stock = yf.Ticker(ticker)
+        hist = stock.history(period="1y")  # Increased to 1 year for stability
+        if hist.empty or len(hist) < 100:
+            logger.warning(f"{ticker}: Insufficient data (<100 days)")
+            return None
+
+        df = hist[['Close', 'Volume', 'High', 'Low']].copy()
+
+        # Add technical indicators
+        delta = df['Close'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+        rs = gain / (loss + 1e-10)
+        df['RSI'] = 100 - (100 / (1 + rs))
+
+        exp12 = df['Close'].ewm(span=12).mean()
+        exp26 = df['Close'].ewm(span=26).mean()
+        df['MACD'] = exp12 - exp26
+        df['MACD_Signal'] = df['MACD'].ewm(span=9).mean()
+
+        bb_sma = df['Close'].rolling(20).mean()
+        bb_std = df['Close'].rolling(20).std()
+        df['BB_High'] = bb_sma + 2 * bb_std
+        df['BB_Low'] = bb_sma - 2 * bb_std
+
+        tp = (df['High'] + df['Low'] + df['Close']) / 3
+        sma_tp = tp.rolling(20).mean()
+        mad = tp.rolling(20).apply(lambda x: np.mean(np.abs(x - x.mean())), raw=True)
+        df['CCI'] = (tp - sma_tp) / (0.015 * mad)
+
+        info = stock.info
+        eps = info.get('trailingEps', 0.0)
+        pe = info.get('trailingPE', 0.0)
+        current_price = df['Close'].iloc[-1]
+        if pe == 0 and eps > 0:
+            pe = current_price / eps
+        df['PE'] = pe
+
+        features = ['Close', 'Volume', 'RSI', 'MACD', 'MACD_Signal', 'BB_High', 'BB_Low', 'CCI', 'PE']
+        df_model = df[features].dropna()
+        if len(df_model) < 60:
+            return None
+
+        # Scale
+        scaler = MinMaxScaler()
+        scaled = scaler.fit_transform(df_model)
+
+        # Create sequences
+        seq_length = 30
+        X = []
+        for i in range(len(scaled) - seq_length):
+            X.append(scaled[i:i + seq_length])
+        X = np.array(X)
+        if len(X) < 10:
+            return None
+
+        # Model with dropout for stability
+        class LSTMModel(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.lstm = nn.LSTM(len(features), 64, num_layers=2, batch_first=True, dropout=0.3)
+                self.fc = nn.Linear(64, 1)
+                self.dropout = nn.Dropout(0.3)
+
+            def forward(self, x):
+                out, _ = self.lstm(x)
+                out = self.dropout(out[:, -1, :])
+                return self.fc(out)
+
+        model = LSTMModel()
+        criterion = nn.MSELoss()
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+
+        # Training data
+        X_tensor = torch.tensor(X, dtype=torch.float32)
+        y_tensor = torch.tensor(scaled[seq_length:, 0], dtype=torch.float32).unsqueeze(1)  # All targets
+
+        # Train longer for better convergence
+        model.train()
+        for epoch in range(300):
+            optimizer.zero_grad()
+            outputs = model(X_tensor)
+            loss = criterion(outputs, y_tensor)
+            loss.backward()
+            optimizer.step()
+
+        # --- Stable Recursive Forecast ---
+        model.eval()
+        predictions = []
+        current_seq = scaled[-seq_length:].copy()
+
+        with torch.no_grad():
+            for _ in range(6):
+                input_tensor = torch.tensor(current_seq.reshape(1, seq_length, -1), dtype=torch.float32)
+                pred_scaled = model(input_tensor)
+                pred_val = pred_scaled.item()
+                predictions.append(pred_val)
+
+                # Shift and update only Close price
+                new_row = current_seq[-1].copy()
+                new_row[0] = pred_val
+                current_seq = np.vstack((current_seq[1:], new_row))
+
+        # Inverse transform
+        pred_scaled_array = np.array(predictions).reshape(-1, 1)
+        dummy = np.zeros((6, len(features)))
+        dummy[:, 0] = pred_scaled_array.flatten()
+        pred_prices = scaler.inverse_transform(dummy)[:, 0]
+
+        # Dates
+        last_date = df.index[-1]
+        dates = pd.bdate_range(start=last_date + timedelta(days=1), periods=6)
+
+        # Forecast list
+        forecast = []
+        prev_price = df['Close'].iloc[-1]
+        for date, price in zip(dates, pred_prices):
+            change = price - prev_price
+            change_pct = (change / prev_price) * 100 if prev_price != 0 else 0
+            forecast.append({
+                "date": date.strftime("%Y-%m-%d (%a)"),
+                "price": round(price, 2),
+                "change": round(change, 2),
+                "change_pct": round(change_pct, 2)
+            })
+            prev_price = price
+
+        # --- Generate Chart ---
+        fig, ax = plt.subplots(figsize=(12, 6))
+        # Show last 60 days history
+        hist_slice = df['Close'][-60:]
+        ax.plot(hist_slice.index, hist_slice.values, label='Historical Close', color='blue', linewidth=2)
+        ax.plot(dates, pred_prices, label='Predicted Close', color='orange', marker='o', linewidth=2.5, markersize=8)
+        ax.set_title(f'{ticker} - 6-Day Price Forecast (LSTM)', fontsize=16)
+        ax.set_ylabel('Price (₹)')
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+
+        buf = BytesIO()
+        fig.savefig(buf, format='png', dpi=150, bbox_inches='tight')
+        buf.seek(0)
+        chart_base64 = base64.b64encode(buf.read()).decode('utf-8')
+        plt.close(fig)
+
+        return {
+            "ticker": ticker,
+            "current_price": round(df['Close'].iloc[-1], 2),
+            "forecast": forecast,
+            "chart_base64": chart_base64
+        }
+
+    except Exception as e:
+        logger.error(f"LSTM Prediction failed for {ticker}: {e}")
+        return None
+
+@app.get("/predict/{ticker}", response_class=HTMLResponse)
+async def predict_stock(ticker: str, request: Request):
+    result = run_lstm_prediction(ticker)
+    if not result:
+        return HTMLResponse('<div class="alert alert-danger">Prediction failed or insufficient data.</div>')
+    return templates.TemplateResponse("components/prediction_modal.html", {"request": request, "data": result})
 
 if __name__ == "__main__":
     import uvicorn
