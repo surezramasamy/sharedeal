@@ -215,9 +215,10 @@
                     <span class="badge {{ stock.recommendation }}">{{ stock.recommendation }}</span>
                   </td>
 
-                <td class="text-center">
-  <div class="btn-group" role="group">
-    <!-- Refresh Button -->
+                <td class="text-center align-middle">
+  <!-- Flexible layout for buttons - ensures all visible on mobile/cloud -->
+  <div class="d-flex gap-1 flex-wrap justify-content-center">
+    <!-- Refresh -->
     <button 
       hx-post="/refresh-single/{{ stock.ticker }}"
       hx-target="#stock-row-{{ stock.ticker }}"
@@ -228,7 +229,7 @@
       <i class="fas fa-sync-alt"></i>
     </button>
 
-    <!-- News Button -->
+    <!-- News -->
     <button 
       hx-get="/news/{{ stock.ticker }}" 
       hx-target="#news-modal .modal-body" 
@@ -240,7 +241,7 @@
       <i class="fas fa-newspaper"></i>
     </button>
 
-    <!-- Delete Button -->
+    <!-- Delete -->
     <button 
       hx-delete="/delete-stock/{{ stock.ticker }}"
       hx-swap="outerHTML"
@@ -252,15 +253,15 @@
       <i class="fas fa-trash"></i>
     </button>
 
-    <!-- PREDICT BUTTON - MOVED TO LAST, FORCED GREEN WITH INLINE STYLE -->
+    <!-- PREDICT BUTTON - LAST POSITION, FORCED GREEN -->
     <button 
       hx-get="/predict/{{ stock.ticker }}"
       hx-target="#modalContainer"
       hx-swap="innerHTML"
       class="btn btn-sm text-white"
-      style="background-color: #06d6a0 !important; border-color: #06d6a0 !important; padding: 0.4rem 0.8rem; font-size: 0.85rem;"
-      onmouseover="this.style.backgroundColor='#05b591'; this.style.borderColor='#05b591';"
-      onmouseout="this.style.backgroundColor='#06d6a0'; this.style.borderColor='#06d6a0';"
+      style="background-color: #06d6a0 !important; border-color: #06d6a0 !important;"
+      onmouseover="this.style.backgroundColor='#05b591'"
+      onmouseout="this.style.backgroundColor='#06d6a0'"
       title="Predict Next 6 Days">
       <i class="fas fa-crystal-ball"></i> Predict
     </button>
