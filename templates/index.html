@@ -215,51 +215,57 @@
                     <span class="badge {{ stock.recommendation }}">{{ stock.recommendation }}</span>
                   </td>
 
-                  <td class="text-center">
-                    <div class="btn-group" role="group">
-                      <button 
-                        hx-post="/refresh-single/{{ stock.ticker }}"
-                        hx-target="#stock-row-{{ stock.ticker }}"
-                        hx-swap="outerHTML"
-                        hx-on::after-request="showToast('Refreshed {{ stock.ticker }}')"
-                        class="btn btn-sm btn-refresh text-white"
-                        title="Refresh">
-                        <i class="fas fa-sync-alt"></i>
-                      </button>
+                <td class="text-center">
+  <div class="btn-group" role="group">
+    <!-- Refresh Button -->
+    <button 
+      hx-post="/refresh-single/{{ stock.ticker }}"
+      hx-target="#stock-row-{{ stock.ticker }}"
+      hx-swap="outerHTML"
+      hx-on::after-request="showToast('Refreshed {{ stock.ticker }}')"
+      class="btn btn-sm btn-refresh text-white"
+      title="Refresh">
+      <i class="fas fa-sync-alt"></i>
+    </button>
 
-                     <button 
-                      hx-get="/predict/{{ stock.ticker }}"
-                      hx-target="#modalContainer"
-                      hx-swap="innerHTML"
-                      class="btn btn-sm text-white me-1"
-                      style="background-color: #06d6a0 !important; border-color: #06d6a0 !important; padding: 0.4rem 0.8rem; font-size: 0.85rem;"
-                      onmouseover="this.style.backgroundColor='#05b591'; this.style.borderColor='#05b591';"
-                      onmouseout="this.style.backgroundColor='#06d6a0'; this.style.borderColor='#06d6a0';"
-                      title="Predict Next 6 Days">
-                      <i class="fas fa-crystal-ball"></i> Predict
-                    </button>
+    <!-- News Button -->
+    <button 
+      hx-get="/news/{{ stock.ticker }}" 
+      hx-target="#news-modal .modal-body" 
+      hx-swap="innerHTML"
+      class="btn btn-sm btn-info text-white"
+      data-bs-toggle="modal" 
+      data-bs-target="#news-modal"
+      title="View News">
+      <i class="fas fa-newspaper"></i>
+    </button>
 
-                      <button 
-                        hx-get="/news/{{ stock.ticker }}" 
-                        hx-target="#news-modal .modal-body" 
-                        hx-swap="innerHTML"
-                        class="btn btn-sm btn-info text-white"
-                        data-bs-toggle="modal" 
-                        data-bs-target="#news-modal"
-                        title="View News">
-                        <i class="fas fa-newspaper"></i>
-                      </button>
+    <!-- Delete Button -->
+    <button 
+      hx-delete="/delete-stock/{{ stock.ticker }}"
+      hx-swap="outerHTML"
+      hx-target="closest tr"
+      hx-confirm="Delete {{ stock.ticker }} permanently?"
+      hx-on::after-request="showToast('Deleted {{ stock.ticker }}')"
+      class="btn btn-sm btn-delete text-white"
+      title="Delete">
+      <i class="fas fa-trash"></i>
+    </button>
 
-                      <button 
-                        hx-delete="/delete-stock/{{ stock.ticker }}"
-                        hx-swap="outerHTML"
-                        hx-target="closest tr"
-                        hx-confirm="Delete {{ stock.ticker }} permanently?"
-                        hx-on::after-request="showToast('Deleted {{ stock.ticker }}')"
-                        class="btn btn-sm btn-delete text-white"
-                        title="Delete">
-                        <i class="fas fa-trash"></i>
-                      </button>
+    <!-- PREDICT BUTTON - MOVED TO LAST, FORCED GREEN WITH INLINE STYLE -->
+    <button 
+      hx-get="/predict/{{ stock.ticker }}"
+      hx-target="#modalContainer"
+      hx-swap="innerHTML"
+      class="btn btn-sm text-white"
+      style="background-color: #06d6a0 !important; border-color: #06d6a0 !important; padding: 0.4rem 0.8rem; font-size: 0.85rem;"
+      onmouseover="this.style.backgroundColor='#05b591'; this.style.borderColor='#05b591';"
+      onmouseout="this.style.backgroundColor='#06d6a0'; this.style.borderColor='#06d6a0';"
+      title="Predict Next 6 Days">
+      <i class="fas fa-crystal-ball"></i> Predict
+    </button>
+  </div>
+</td>
                     </div>
                   </td>
                 </tr>
