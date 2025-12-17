@@ -220,7 +220,7 @@
   <div class="d-flex gap-1 flex-wrap justify-content-center">
     <!-- Predict -->
     <button 
-      hx-post="/predict/{{ stock.ticker }}"
+      hx-get="/predict/{{ stock.ticker }}"
       hx-target="#modalContainer"
       hx-swap="innerHTM"    
       class="btn btn-sm btn-refresh text-white"
