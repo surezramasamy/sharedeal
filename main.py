@@ -7,8 +7,9 @@ import pandas as pd
 import requests
 import yfinance as yf
 from textblob import TextBlob
+from fastapi import Request
 # --- FIX 1: Add 'func' to imports for robust SQLAlchemy usage ---
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Boolean, text, func 
+from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Boolean, text, func, Date, Text, UniqueConstraint
 from sqlalchemy.orm import sessionmaker, declarative_base
 from contextlib import contextmanager
 from fastapi import FastAPI, Request, Form
@@ -86,7 +87,24 @@ class StockScoreModel(Base):
     data_source = Column(String)
     analyzed_at = Column(DateTime, default=datetime.utcnow, index=True)
 
+
 Base.metadata.create_all(bind=engine)
+
+# Create prediction table if not exists
+with engine.connect() as conn:
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS stock_predictions (
+            id INTEGER PRIMARY KEY,
+            ticker TEXT,
+            prediction_date DATE,
+            current_price REAL,
+            forecast_json TEXT,
+            chart_base64 TEXT,
+            created_at DATETIME,
+            UNIQUE(ticker, prediction_date)
+        )
+    """))
+    conn.commit()
 
 # -------------------------------------------------
 # DB MIGRATION (Auto-adds columns if missing)
@@ -522,7 +540,17 @@ def refresh_all_stocks_async():
     finally:
         # Final progress set to 100
         REFRESH_JOB_STATUS["progress"] = 100
+class StockPredictionModel(Base):
+    __tablename__ = "stock_predictions"
+    id = Column(Integer, primary_key=True, index=True)
+    ticker = Column(String, index=True)
+    prediction_date = Column(Date, default=datetime.utcnow().date, index=True)  # Date only
+    current_price = Column(Float)
+    forecast_json = Column(String)  # JSON string of forecast list
+    chart_base64 = Column(Text, nullable=True)  # Base64 image
+    created_at = Column(DateTime, default=datetime.utcnow)
 
+    __table_args__ = (UniqueConstraint('ticker', 'prediction_date', name='unique_ticker_date'),)
 # -------------------------------------------------
 # ROUTES (Updated with new endpoints)
 # -------------------------------------------------
@@ -551,20 +579,17 @@ async def search_stocks(query: str = ""):
     return HTMLResponse(html if html else "<p>No matches</p>")
 
 @app.post("/add-selected")
-async def add_selected(selectedTickers: List[str] = Form(...)):
+async def add_selected(request: Request, selectedTickers: List[str] = Form(...)):
     with get_db() as db:
         for t in selectedTickers:
             name = next((s["name"] for s in stock_pool if s["ticker"] == t), t)
             
-            # 1. Ensure stock exists in StockModel
             if not db.query(StockModel).filter(StockModel.ticker == t).first():
                 db.add(StockModel(ticker=t, company_name=name))
-                db.commit() 
+                db.commit()
 
-            # 2. Analyze
             data = analyze_stock_full(t, name)
             
-            # 3. Remove old score & add new
             db.query(StockScoreModel).filter(StockScoreModel.ticker == t).delete()
             db.add(StockScoreModel(
                 ticker=t, company_name=name,
@@ -577,7 +602,7 @@ async def add_selected(selectedTickers: List[str] = Form(...)):
                 rsi=data['rsi'],
                 cci=data['cci'],
                 macd_signal=data['macd_signal'],
-                sma_signal=data['sma_signal'], 
+                sma_signal=data['sma_signal'],
                 bb_signal=data['bb_signal'],
                 eps=data['eps'],
                 pe=data['pe'],
@@ -586,7 +611,9 @@ async def add_selected(selectedTickers: List[str] = Form(...)):
                 data_source="YFinance"
             ))
         db.commit()
-    return HTMLResponse('<div class="alert alert-success">Stocks Added!</div><a href="/index" class="btn btn-primary">Go to Dashboard</a>')
+    
+    # Now 'request' is available
+    return templates.TemplateResponse("add_success.html", {"request": request})
 
 @app.get("/index")
 async def index(request: Request):
@@ -842,13 +869,94 @@ def run_lstm_prediction(ticker: str) -> Optional[Dict]:
     except Exception as e:
         logger.error(f"LSTM Prediction failed for {ticker}: {e}")
         return None
+def run_daily_predictions_async():
+    """Runs LSTM predictions for all stocks once per day."""
+    today = datetime.utcnow().date()
+    
+    with get_db() as db:
+        stocks = db.query(StockModel).filter(StockModel.is_active == True).all()
+        if not stocks:
+            logger.info("No active stocks to predict.")
+            return
+
+    for stock in stocks:
+        ticker = stock.ticker
+        
+        # Check if prediction already exists for today
+        with get_db() as db:
+            existing = db.query(StockPredictionModel).filter(
+                StockPredictionModel.ticker == ticker,
+                func.date(StockPredictionModel.prediction_date) == today
+            ).first()
+            if existing:
+                logger.info(f"Prediction for {ticker} already exists for today. Skipping.")
+                continue
+
+        # Run prediction
+        result = run_lstm_prediction(ticker)
+        if not result:
+            logger.warning(f"Failed to predict {ticker} today.")
+            continue
+
+        # Save to DB
+        with get_db() as db:
+            pred = StockPredictionModel(
+                ticker=ticker,
+                prediction_date=today,
+                current_price=result['current_price'],
+                forecast_json=json.dumps(result['forecast']),
+                chart_base64=result.get('chart_base64')
+            )
+            db.add(pred)
+            db.commit()
+        logger.info(f"Saved daily prediction for {ticker}")
+
+# Background thread to run once per day
+def start_daily_prediction_job():
+    def job():
+        while True:
+            now = datetime.utcnow()
+            # Run at 1:00 AM UTC daily
+            next_run = (now + timedelta(days=1)).replace(hour=1, minute=0, second=0, microsecond=0)
+            sleep_time = (next_run - now).total_seconds()
+            logger.info(f"Next daily prediction run in {sleep_time/3600:.1f} hours.")
+            time.sleep(sleep_time)
+            run_daily_predictions_async()
+
+    threading.Thread(target=job, daemon=True).start()
 
 @app.get("/predict/{ticker}", response_class=HTMLResponse)
 async def predict_stock(ticker: str, request: Request):
+    today = datetime.utcnow().date()
+    
+    with get_db() as db:
+        # First, try to get today's pre-computed prediction
+        pred = db.query(StockPredictionModel).filter(
+            StockPredictionModel.ticker == ticker,
+            func.date(StockPredictionModel.prediction_date) == today
+        ).first()
+        
+        if pred:
+            data = {
+                "ticker": ticker,
+                "current_price": pred.current_price,
+                "forecast": json.loads(pred.forecast_json),
+                "chart_base64": pred.chart_base64
+            }
+            return templates.TemplateResponse("components/prediction_modal.html", {"request": request, "data": data})
+    
+    # Fallback: run live prediction if no daily result
     result = run_lstm_prediction(ticker)
     if not result:
-        return HTMLResponse('<div class="alert alert-danger">Prediction failed or insufficient data.</div>')
+        return HTMLResponse('<div class="alert alert-warning p-3">Prediction unavailable. Try again later.</div>')
+    
     return templates.TemplateResponse("components/prediction_modal.html", {"request": request, "data": result})
+
+
+@app.on_event("startup")
+async def startup_event():
+    start_daily_prediction_job()
+    logger.info("Daily prediction background job started.")
 
 if __name__ == "__main__":
     import uvicorn

@@ -31,23 +31,23 @@
     .btn-refresh {
       background: var(--primary);
       border: none;
-      padding: 0.4rem 0.8rem;
-      font-size: 0.85rem;
+      padding: 0.5rem 1rem;
+      font-size: 0.9rem;
     }
     .btn-refresh:hover { background: #3a56d4; }
     .btn-delete {
       background: var(--danger);
       border: none;
-      padding: 0.4rem 0.8rem;
-      font-size: 0.85rem;
+      padding: 0.5rem 1rem;
+      font-size: 0.9rem;
     }
-    /* FORCE GREEN PREDICT BUTTON - WORKS ON RAILWAY, LOCAL, MOBILE */
+    /* GUARANTEED GREEN PREDICT BUTTON */
     .btn-predict {
       background: #06d6a0 !important;
       border-color: #06d6a0 !important;
       color: white !important;
-      padding: 0.4rem 0.8rem;
-      font-size: 0.85rem;
+      padding: 0.5rem 1rem;
+      font-size: 0.9rem;
     }
     .btn-predict:hover {
       background: #05b591 !important;
@@ -56,13 +56,6 @@
     .badge.BUY { background: var(--success); color: white; }
     .badge.SELL { background: var(--danger); color: white; }
     .badge.HOLD { background: var(--warning); color: #000; }
-    .status-badge {
-      font-size: 0.8rem;
-      padding: 0.35rem 0.7rem;
-    }
-    .spinner {
-      width: 1rem; height: 1rem; border-width: 2px;
-    }
     .table th {
       background: rgba(67, 97, 238, 0.1);
       font-weight: 600;
@@ -75,20 +68,47 @@
       box-shadow: 0 10px 30px rgba(0,0,0,0.2);
     }
     .indicator-detail {
-        font-size: 0.75em;
-        display: block;
-        color: #6c757d;
-        white-space: nowrap;
+      font-size: 0.75em;
+      display: block;
+      color: #6c757d;
+      white-space: nowrap;
     }
+    /* Mobile: Larger touch targets */
+    @media (max-width: 768px) {
+      .btn {
+        padding: 0.6rem 1rem !important;
+        font-size: 0.95rem !important;
+      }
+    }
+    .table thead th {
+  background: linear-gradient(135deg, #4361ee, #3f37c9) !important;
+  color: white !important;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  font-size: 0.85rem;
+  border: none;
+  padding-top: 1rem;
+  padding-bottom: 1rem;
+}
+.table tbody tr {
+  transition: all 0.2s ease;
+}
+.table tbody tr:hover {
+  background-color: rgba(67, 97, 238, 0.05);
+  transform: scale(1.01);
+}
   </style>
+
+
 </head>
 <body>
-  <div class="container-fluid py-5">
-    <div class="d-flex justify-content-between align-items-center mb-4 px-3">
-      <h1 class="h3 fw-bold text-primary">
+  <div class="container-fluid py-4 px-3">
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-center mb-4 gap-3">
+      <h1 class="h3 fw-bold text-primary mb-0">
         📈 Stock AI Dashboard
       </h1>
-      <div class="d-flex gap-2 align-items-center">
+      <div class="d-flex gap-2 flex-wrap">
         <a href="/stock-select" class="btn btn-outline-primary">
           <i class="fas fa-plus"></i> Add Stocks
         </a>
@@ -100,42 +120,43 @@
 
     {% if stocks|length == 0 %}
       <div class="text-center py-5">
-        <div class="bg-white p-5 rounded-4 shadow-sm">
-          <i class="fas fa-chart-bar fa-3x text-muted mb-3"></i>
+        <div class="bg-white p-5 rounded-4 shadow-sm mx-auto" style="max-width: 500px;">
+          <i class="fas fa-chart-bar fa-4x text-muted mb-4"></i>
           <p class="text-muted fs-5">No stocks added yet. Get started by adding some tickers!</p>
-          <a href="/stock-select" class="btn btn-primary px-4">Get Started</a>
+          <a href="/stock-select" class="btn btn-primary px-5 py-3">Get Started</a>
         </div>
       </div>
     {% else %}
-      <div class="card bg-white mx-3">
+      <div class="card bg-white mx-auto" style="max-width: 100%;">
         <div class="card-body p-0">
+          <!-- Mobile-friendly responsive table -->
           <div class="table-responsive">
             <table class="table table-hover align-middle mb-0 table-sm">
-              <thead>
-                <tr>
-                  <th class="ps-4">Ticker</th>
-                  <th>Company</th>
-                  <th>RSI</th>
-                  <th>CCI</th>
-                  <th>Sentiment</th>
-                  <th>News</th>
-                  <th>S. Score</th>
-                  <th>T. Score</th>
-                  <th>EPS</th>
-                  <th>P/E</th>
-                  <th>MACD</th>
-                  <th>Bollinger</th>
-                  <th>Volume</th>
-                  <th>Final Score</th>
-                  <th>Signal</th>
-                  <th class="text-center">Actions</th>
-                </tr>
-              </thead>
+              <thead class="table-dark">
+  <tr>
+    <th class="ps-3 py-3 text-white fw-semibold">Ticker</th>
+    <th class="d-none d-md-table-cell py-3 text-white fw-semibold">Company</th>
+    <th class="py-3 text-white fw-semibold">RSI</th>
+    <th class="d-none d-md-table-cell py-3 text-white fw-semibold">CCI</th>
+    <th class="d-none d-lg-table-cell py-3 text-white fw-semibold">Sentiment</th>
+    <th class="d-none d-lg-table-cell py-3 text-white fw-semibold">News</th>
+    <th class="d-none d-lg-table-cell py-3 text-white fw-semibold">Sent. Score</th>
+    <th class="d-none d-lg-table-cell py-3 text-white fw-semibold">Tech. Score</th>
+    <th class="d-none d-lg-table-cell py-3 text-white fw-semibold">EPS</th>
+    <th class="d-none d-lg-table-cell py-3 text-white fw-semibold">P/E</th>
+    <th class="d-none d-lg-table-cell py-3 text-white fw-semibold">MACD</th>
+    <th class="d-none d-lg-table-cell py-3 text-white fw-semibold">Bollinger</th>
+    <th class="d-none d-lg-table-cell py-3 text-white fw-semibold">Volume</th>
+    <th class="py-3 text-white fw-semibold">Final Score</th>
+    <th class="py-3 text-white fw-semibold">Signal</th>
+    <th class="text-center py-3 text-white fw-semibold">Actions</th>
+  </tr>
+</thead>
               <tbody id="stock-list">
                 {% for stock in stocks %}
                 <tr id="stock-row-{{ stock.ticker }}">
-                  <td class="ps-4 fw-bold text-primary">{{ stock.ticker }}</td>
-                  <td>{{ stock.company_name }}</td>
+                  <td class="ps-3 fw-bold text-primary">{{ stock.ticker }}</td>
+                  <td class="d-none d-md-table-cell">{{ stock.company_name }}</td>
 
                   <td>
                     {% set rsi_val = "%.1f"|format(stock.rsi) if stock.rsi is number else "N/A" %}
@@ -143,130 +164,103 @@
                         {{ rsi_val }}
                     </span>
                     <strong style="font-size: 1.4em; margin-left: 8px;">
-                        {% if stock.final_score >= 0.6 %}
-                          <span style="color: var(--success);">↑</span>
-                        {% elif stock.final_score <= 0.4 %}
-                          <span style="color: var(--danger);">↓</span>
-                        {% else %}
-                          <span style="color: gray;">→</span>
-                        {% endif %}
+                        {% if stock.final_score >= 0.6 %}↑
+                        {% elif stock.final_score <= 0.4 %}↓
+                        {% else %}→{% endif %}
                     </strong>
                   </td>
 
-                  <td>
+                  <td class="d-none d-md-table-cell">
                     {% set cci_val = "%.1f"|format(stock.cci) if stock.cci is number else "N/A" %}
                     <span class="badge {{ 'bg-danger' if stock.cci > 100 else 'bg-success' if stock.cci < -100 else 'bg-light text-dark' }}">
                         {{ cci_val }}
                     </span>
                   </td>
 
-                  <td>{{ stock.sentiment.split('(')[0].strip() }}</td>
-
-                  <td>
+                  <td class="d-none d-lg-table-cell">{{ stock.sentiment.split('(')[0].strip() }}</td>
+                  <td class="d-none d-lg-table-cell">
                     <span class="badge bg-info text-dark">{{ stock.news_count }}</span>
                   </td>
-
-                  <td>{{ "%.2f"|format(stock.sentiment_score) }}</td>
-                  <td>{{ "%.2f"|format(stock.technical_score) }}</td>
-
-                  <td class="fw-bold text-success">
+                  <td class="d-none d-lg-table-cell">{{ "%.2f"|format(stock.sentiment_score) }}</td>
+                  <td class="d-none d-lg-table-cell">{{ "%.2f"|format(stock.technical_score) }}</td>
+                  <td class="d-none d-lg-table-cell fw-bold text-success">
                     {{ "%.2f"|format(stock.eps) if stock.eps is number and stock.eps > 0 else "N/A" }}
                   </td>
-
-                  <td>
+                  <td class="d-none d-lg-table-cell">
                     {% if stock.pe is number and stock.pe > 0 %}
                       <span class="badge {{ 'bg-success' if stock.pe < 20 else 'bg-warning text-dark' if stock.pe < 40 else 'bg-danger' }}">
                         {{ "%.2f"|format(stock.pe) }}
                       </span>
-                    {% else %}
-                      <span class="text-muted">N/A</span>
-                    {% endif %}
+                    {% else %}<span class="text-muted">N/A</span>{% endif %}
                   </td>
-
-                  <td>
+                  <td class="d-none d-lg-table-cell">
                     {% set macd_status = 'Bullish' if 'Bullish' in stock.macd_signal else 'Bearish' if 'Bearish' in stock.macd_signal else 'N/A' %}
                     <span class="badge {{ 'bg-success' if macd_status == 'Bullish' else 'bg-danger' if macd_status == 'Bearish' else 'bg-secondary' }}">
                       {{ macd_status }}
                     </span>
-                    <span class="indicator-detail" title="MACD / Signal Line">{{ stock.macd_signal.split('(')[0] }}</span>
                   </td>
-
-                  <td>
+                  <td class="d-none d-lg-table-cell">
                     {% set bb_status = 'Oversold' if 'Oversold' in stock.bb_signal else 'Overbought' if 'Overbought' in stock.bb_signal else 'Range' if 'Range' in stock.bb_signal else 'N/A' %}
                     <span class="badge {{ 'bg-success' if bb_status == 'Oversold' else 'bg-danger' if bb_status == 'Overbought' else 'bg-light text-dark' }}">
                       {{ bb_status }}
                     </span>
-                    {% if "H:" in stock.bb_signal %}
-                         <span class="indicator-detail" title="Upper / Lower Band Price">{{ stock.bb_signal.split('(')[1].replace(')', '') }}</span>
-                    {% endif %}
                   </td>
-
-                  <td>
+                  <td class="d-none d-lg-table-cell">
                     <span class="badge {{ 'bg-success' if 'High' in stock.volume_signal else 'bg-danger' if 'Low' in stock.volume_signal else 'bg-light text-dark' }}">
                       {{ stock.volume_signal }}
                     </span>
                   </td>
 
-                  <td class="fw-bold fs-5">
-                    {{ "%.2f"|format(stock.final_score) }}
-                  </td>
+                  <td class="fw-bold fs-5">{{ "%.2f"|format(stock.final_score) }}</td>
+                  <td><span class="badge {{ stock.recommendation }}">{{ stock.recommendation }}</span></td>
 
-                  <td>
-                    <span class="badge {{ stock.recommendation }}">{{ stock.recommendation }}</span>
-                  </td>
+                  <!-- ACTIONS COLUMN - FULLY MOBILE FRIENDLY -->
+                  <td class="text-center align-middle">
+                    <div class="d-flex gap-2 flex-wrap justify-content-center">
+                      <!-- Refresh -->
+                      <button 
+                        hx-post="/refresh-single/{{ stock.ticker }}"
+                        hx-target="#stock-row-{{ stock.ticker }}"
+                        hx-swap="outerHTML"
+                        hx-on::after-request="showToast('Refreshed {{ stock.ticker }}')"
+                        class="btn btn-sm btn-refresh text-white"
+                        title="Refresh">
+                        <i class="fas fa-sync-alt"></i>
+                      </button>
 
-                <td class="text-center align-middle">
-  <!-- Flexible layout for buttons - ensures all visible on mobile/cloud -->
-  <div class="d-flex gap-1 flex-wrap justify-content-center">
-    <!-- Predict -->
-    <button 
-      hx-get="/predict/{{ stock.ticker }}"
-      hx-target="#modalContainer"
-      hx-swap="innerHTM"    
-      class="btn btn-sm btn-refresh text-white"
-      title="Predict Next 6 Days">
-      <i class="fas fa-sync-alt"></i>
-    </button>
-   
+                      <!-- News -->
+                      <button 
+                        hx-get="/news/{{ stock.ticker }}" 
+                        hx-target="#news-modal .modal-body" 
+                        hx-swap="innerHTML"
+                        class="btn btn-sm btn-info text-white"
+                        data-bs-toggle="modal" 
+                        data-bs-target="#news-modal"
+                        title="View News">
+                        <i class="fas fa-newspaper"></i>
+                      </button>
 
-    <!-- News -->
-    <button 
-      hx-get="/news/{{ stock.ticker }}" 
-      hx-target="#news-modal .modal-body" 
-      hx-swap="innerHTML"
-      class="btn btn-sm btn-info text-white"
-      data-bs-toggle="modal" 
-      data-bs-target="#news-modal"
-      title="View News">
-      <i class="fas fa-newspaper"></i>
-    </button>
+                      <!-- Delete -->
+                      <button 
+                        hx-delete="/delete-stock/{{ stock.ticker }}"
+                        hx-swap="outerHTML"
+                        hx-target="closest tr"
+                        hx-confirm="Delete {{ stock.ticker }} permanently?"
+                        hx-on::after-request="showToast('Deleted {{ stock.ticker }}')"
+                        class="btn btn-sm btn-delete text-white"
+                        title="Delete">
+                        <i class="fas fa-trash"></i>
+                      </button>
 
-    <!-- Delete -->
-    <button 
-      hx-delete="/delete-stock/{{ stock.ticker }}"
-      hx-swap="outerHTML"
-      hx-target="closest tr"
-      hx-confirm="Delete {{ stock.ticker }} permanently?"
-      hx-on::after-request="showToast('Deleted {{ stock.ticker }}')"
-      class="btn btn-sm btn-delete text-white"
-      title="Delete">
-      <i class="fas fa-trash"></i>
-    </button>
-
-    <!-- PREDICT BUTTON - LAST POSITION, FORCED GREEN -->
-    <button 
-      hx-get="/predict/{{ stock.ticker }}"
-      hx-target="#modalContainer"
-      hx-swap="innerHTML"
-      class="btn btn-sm text-white"
-      style="background-color: #06d6a0 !important; border-color: #06d6a0 !important;"
-      onmouseover="this.style.backgroundColor='#05b591'"
-      onmouseout="this.style.backgroundColor='#06d6a0'"
-      title="Predict Next 6 Days">
-      <i class="fas fa-crystal-ball"></i> Predict
-    </button>
-  </div>
-</td>
+                      <!-- PREDICT BUTTON - LAST, GUARANTEED GREEN -->
+                      <button 
+                        hx-get="/predict/{{ stock.ticker }}"
+                        hx-target="#modalContainer"
+                        hx-swap="innerHTML"
+                        class="btn btn-sm btn-predict text-white"
+                        title="Predict Next 6 Days">
+                        <i class="fas fa-crystal-ball"></i> Predict
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -278,64 +272,63 @@
       </div>
     {% endif %}
 
-    <!-- MODAL CONTAINER FOR PREDICTION -->
+    <!-- MODAL CONTAINER -->
     <div id="modalContainer"></div>
-  </div>
 
-  <!-- News Modal -->
-  <div class="modal fade" id="news-modal" tabindex="-1">
-    <div class="modal-dialog modal-lg modal-dialog-scrollable">
-      <div class="modal-content">
-        <div class="modal-header border-0 pb-2">
-          <h5 class="modal-title fw-bold">Latest News (Last 5 Days)</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-        </div>
-        <div class="modal-body pt-2">
-          <p class="text-center text-muted">Click "View News" to load articles...</p>
-        </div>
-        <div class="modal-footer border-0 pt-2">
-          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+    <!-- News Modal -->
+    <div class="modal fade" id="news-modal" tabindex="-1">
+      <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+          <div class="modal-header border-0 pb-2">
+            <h5 class="modal-title fw-bold">Latest News (Last 5 Days)</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body pt-2">
+            <p class="text-center text-muted">Click "View News" to load articles...</p>
+          </div>
+          <div class="modal-footer border-0 pt-2">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+          </div>
         </div>
       </div>
     </div>
-  </div>
 
-  <!-- Toast -->
-  <div class="position-fixed bottom-0 end-0 p-3" style="z-index: 1100">
-    <div id="liveToast" class="toast align-items-center text-white bg-success border-0" role="alert">
-      <div class="d-flex">
-        <div class="toast-body"></div>
-        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+    <!-- Toast -->
+    <div class="position-fixed bottom-0 end-0 p-3" style="z-index: 1100">
+      <div id="liveToast" class="toast align-items-center text-white bg-success border-0" role="alert">
+        <div class="d-flex">
+          <div class="toast-body"></div>
+          <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+        </div>
       </div>
     </div>
-  </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <script>
-    function showToast(message) {
-      const toastEl = document.getElementById('liveToast');
-      toastEl.querySelector('.toast-body').textContent = message;
-      const toast = new bootstrap.Toast(toastEl);
-      toast.show();
-    }
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+      function showToast(message) {
+        const toastEl = document.getElementById('liveToast');
+        toastEl.querySelector('.toast-body').textContent = message;
+        const toast = new bootstrap.Toast(toastEl);
+        toast.show();
+      }
 
-    // Auto-show prediction modal
-    document.body.addEventListener('htmx:afterSwap', function(evt) {
-      if (evt.detail.target.id === 'modalContainer') {
-        const modalEl = document.getElementById('predictModal');
-        if (modalEl) {
-          const modal = new bootstrap.Modal(modalEl);
-          modal.show();
+      // Show prediction modal
+      document.body.addEventListener('htmx:afterSwap', function(evt) {
+        if (evt.detail.target.id === 'modalContainer') {
+          const modalEl = document.getElementById('predictModal');
+          if (modalEl) {
+            const modal = new bootstrap.Modal(modalEl);
+            modal.show();
+          }
         }
-      }
-    });
+      });
 
-    // Clean up after close
-    document.body.addEventListener('hidden.bs.modal', function(evt) {
-      if (evt.target.id === 'predictModal') {
-        document.getElementById('modalContainer').innerHTML = '';
-      }
-    });
-  </script>
+      // Clean up modal
+      document.body.addEventListener('hidden.bs.modal', function(evt) {
+        if (evt.target.id === 'predictModal') {
+          document.getElementById('modalContainer').innerHTML = '';
+        }
+      });
+    </script>
 </body>
 </html>
