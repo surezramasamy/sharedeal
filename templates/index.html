@@ -218,16 +218,16 @@
                 <td class="text-center align-middle">
   <!-- Flexible layout for buttons - ensures all visible on mobile/cloud -->
   <div class="d-flex gap-1 flex-wrap justify-content-center">
-    <!-- Refresh -->
+    <!-- Predict -->
     <button 
-      hx-post="/refresh-single/{{ stock.ticker }}"
-      hx-target="#stock-row-{{ stock.ticker }}"
-      hx-swap="outerHTML"
-      hx-on::after-request="showToast('Refreshed {{ stock.ticker }}')"
+      hx-post="/predict/{{ stock.ticker }}"
+      hx-target="#modalContainer"
+      hx-swap="innerHTM"    
       class="btn btn-sm btn-refresh text-white"
-      title="Refresh">
+      title="Predict Next 6 Days">
       <i class="fas fa-sync-alt"></i>
     </button>
+   
 
     <!-- News -->
     <button 
