@@ -7,9 +7,6 @@ requests
 yfinance
 pandas
 numpy
-torch
-torchvision
-torchaudio
 scikit-learn
 matplotlib
 textblob
