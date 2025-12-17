@@ -199,12 +199,21 @@
                       {{ macd_status }}
                     </span>
                   </td>
-                  <td class="d-none d-lg-table-cell">
-                    {% set bb_status = 'Oversold' if 'Oversold' in stock.bb_signal else 'Overbought' if 'Overbought' in stock.bb_signal else 'Range' if 'Range' in stock.bb_signal else 'N/A' %}
-                    <span class="badge {{ 'bg-success' if bb_status == 'Oversold' else 'bg-danger' if bb_status == 'Overbought' else 'bg-light text-dark' }}">
-                      {{ bb_status }}
-                    </span>
-                  </td>
+                 <td class="d-none d-lg-table-cell">
+  {% set bb_status = 'Oversold' if 'Oversold' in stock.bb_signal else 'Overbought' if 'Overbought' in stock.bb_signal else 'Range' if 'Range' in stock.bb_signal else 'N/A' %}
+  <div>
+    <span class="badge {{ 'bg-success' if bb_status == 'Oversold' else 'bg-danger' if bb_status == 'Overbought' else 'bg-light text-dark' }} mb-1">
+      {{ bb_status }}
+    </span>
+  </div>
+  {% if "H:" in stock.bb_signal %}
+    <small class="text-muted d-block">
+      {{ stock.bb_signal.split('(')[1].replace(')', '').strip() }}
+    </small>
+  {% else %}
+    <small class="text-muted">N/A</small>
+  {% endif %}
+</td>
                   <td class="d-none d-lg-table-cell">
                     <span class="badge {{ 'bg-success' if 'High' in stock.volume_signal else 'bg-danger' if 'Low' in stock.volume_signal else 'bg-light text-dark' }}">
                       {{ stock.volume_signal }}

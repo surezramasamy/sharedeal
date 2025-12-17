@@ -930,13 +930,14 @@ async def predict_stock(ticker: str, request: Request):
     today = datetime.utcnow().date()
     
     with get_db() as db:
-        # First, try to get today's pre-computed prediction
+        # Try to get today's pre-computed prediction first
         pred = db.query(StockPredictionModel).filter(
             StockPredictionModel.ticker == ticker,
             func.date(StockPredictionModel.prediction_date) == today
         ).first()
         
         if pred:
+            # Use saved daily prediction (fast!)
             data = {
                 "ticker": ticker,
                 "current_price": pred.current_price,
@@ -945,10 +946,28 @@ async def predict_stock(ticker: str, request: Request):
             }
             return templates.TemplateResponse("components/prediction_modal.html", {"request": request, "data": data})
     
-    # Fallback: run live prediction if no daily result
+    # FALLBACK: No daily prediction yet → run live prediction now
+    logger.info(f"No daily prediction for {ticker} today. Running live prediction...")
     result = run_lstm_prediction(ticker)
     if not result:
-        return HTMLResponse('<div class="alert alert-warning p-3">Prediction unavailable. Try again later.</div>')
+        return HTMLResponse(
+            '<div class="alert alert-warning p-4 text-center">'
+            '<strong>Prediction unavailable</strong><br>'
+            'Not enough data or temporary issue. Try again later or wait for daily update.'
+            '</div>'
+        )
+    
+    # Optionally save the live result as today's prediction (so next click is instant)
+    with get_db() as db:
+        new_pred = StockPredictionModel(
+            ticker=ticker,
+            prediction_date=today,
+            current_price=result['current_price'],
+            forecast_json=json.dumps(result['forecast']),
+            chart_base64=result.get('chart_base64')
+        )
+        db.add(new_pred)
+        db.commit()
     
     return templates.TemplateResponse("components/prediction_modal.html", {"request": request, "data": result})
 
