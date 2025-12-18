@@ -3,6 +3,8 @@ import logging
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Tuple, Any
 import time
+import json
+import matplotlib
 import pandas as pd
 import requests
 import yfinance as yf
@@ -25,11 +27,13 @@ import torch
 import torch.nn as nn
 from sklearn.preprocessing import MinMaxScaler
 
-from datetime import timedelta
 
+from datetime import datetime, timedelta, date
+from datetime import date
 import matplotlib.pyplot as plt
 from io import BytesIO
 import base64
+matplotlib.use('Agg')
 
 # -------------------------------------------------
 # CONFIG & LOGGING
@@ -841,34 +845,81 @@ def run_lstm_prediction(ticker: str) -> Optional[Dict]:
             prev_price = price
 
         # --- Generate Chart ---
-        fig, ax = plt.subplots(figsize=(12, 6))
-        # Show last 60 days history
-        hist_slice = df['Close'][-60:]
-        ax.plot(hist_slice.index, hist_slice.values, label='Historical Close', color='blue', linewidth=2)
-        ax.plot(dates, pred_prices, label='Predicted Close', color='orange', marker='o', linewidth=2.5, markersize=8)
-        ax.set_title(f'{ticker} - 6-Day Price Forecast (LSTM)', fontsize=16)
-        ax.set_ylabel('Price (₹)')
-        ax.legend()
-        ax.grid(True, alpha=0.3)
-        plt.xticks(rotation=45)
-        plt.tight_layout()
+            # --- Generate Chart (Safe - with fallback) ---
+        chart_base64 = None
+        try:
+            fig, ax = plt.subplots(figsize=(10, 5))
+            ax.plot(df.index[-60:], df['Close'][-60:], label='Historical', color='blue', linewidth=2)
+            ax.plot(dates, pred_prices, label='Predicted', color='orange', marker='o', linewidth=2.5)
+            ax.set_title(f'{ticker} - 6-Day Forecast', fontsize=14)
+            ax.set_ylabel('Price (₹)')
+            ax.legend()
+            ax.grid(alpha=0.3)
+            plt.tight_layout()
 
-        buf = BytesIO()
-        fig.savefig(buf, format='png', dpi=150, bbox_inches='tight')
-        buf.seek(0)
-        chart_base64 = base64.b64encode(buf.read()).decode('utf-8')
-        plt.close(fig)
+            buf = BytesIO()
+            fig.savefig(buf, format='png', dpi=150, bbox_inches='tight')
+            buf.seek(0)
+            chart_base64 = base64.b64encode(buf.read()).decode('utf-8')
+            plt.close(fig)
+        except Exception as e:
+            logger.warning(f"Chart generation failed for {ticker}: {e}")
+            chart_base64 = None  # Continue without chart
+
+        # Forecast list (same as before)
+        forecast = []
+        prev_price = df['Close'].iloc[-1]
+        for date, price in zip(dates, pred_prices):
+            change = price - prev_price
+            change_pct = (change / prev_price) * 100 if prev_price != 0 else 0
+            forecast.append({
+                "date": date.strftime("%Y-%m-%d (%a)"),
+                "price": round(price, 2),
+                "change": round(change, 2),
+                "change_pct": round(change_pct, 2)
+            })
+            prev_price = price
 
         return {
             "ticker": ticker,
             "current_price": round(df['Close'].iloc[-1], 2),
             "forecast": forecast,
-            "chart_base64": chart_base64
+            "chart_base64": chart_base64  # Can be None
         }
 
     except Exception as e:
         logger.error(f"LSTM Prediction failed for {ticker}: {e}")
         return None
+    
+@app.get("/predict-page/{ticker}", response_class=HTMLResponse)
+async def predict_page(ticker: str, request: Request):
+    today = datetime.utcnow().date()
+    
+    with get_db() as db:
+        pred = db.query(StockPredictionModel).filter(
+            StockPredictionModel.ticker == ticker,
+            func.date(StockPredictionModel.prediction_date) == today
+        ).first()
+    
+    if not pred:
+        return HTMLResponse(f"""
+        <div class="container py-5 text-center">
+          <h3>No prediction available for {ticker} today</h3>
+          <p>Daily predictions run at 1:00 AM UTC. Check back later or try tomorrow.</p>
+          <a href="/index" class="btn btn-primary mt-3">← Back to Dashboard</a>
+        </div>
+        """)
+    
+    data = {
+        "ticker": ticker,
+        "current_price": pred.current_price,
+        "forecast": json.loads(pred.forecast_json),
+        "chart_base64": pred.chart_base64
+    }
+    
+    return templates.TemplateResponse("predict_page.html", {"request": request, "data": data})
+
+
 def run_daily_predictions_async():
     """Runs LSTM predictions for all stocks once per day."""
     today = datetime.utcnow().date()
@@ -925,52 +976,66 @@ def start_daily_prediction_job():
 
     threading.Thread(target=job, daemon=True).start()
 
+from fastapi import BackgroundTasks
+
 @app.get("/predict/{ticker}", response_class=HTMLResponse)
 async def predict_stock(ticker: str, request: Request):
     today = datetime.utcnow().date()
     
-    with get_db() as db:
-        # Try to get today's pre-computed prediction first
-        pred = db.query(StockPredictionModel).filter(
-            StockPredictionModel.ticker == ticker,
-            func.date(StockPredictionModel.prediction_date) == today
-        ).first()
-        
-        if pred:
-            # Use saved daily prediction (fast!)
-            data = {
-                "ticker": ticker,
-                "current_price": pred.current_price,
-                "forecast": json.loads(pred.forecast_json),
-                "chart_base64": pred.chart_base64
-            }
-            return templates.TemplateResponse("components/prediction_modal.html", {"request": request, "data": data})
-    
-    # FALLBACK: No daily prediction yet → run live prediction now
-    logger.info(f"No daily prediction for {ticker} today. Running live prediction...")
+    # Run live prediction every time (reliable, shows immediately)
     result = run_lstm_prediction(ticker)
     if not result:
         return HTMLResponse(
             '<div class="alert alert-warning p-4 text-center">'
             '<strong>Prediction unavailable</strong><br>'
-            'Not enough data or temporary issue. Try again later or wait for daily update.'
+            'Not enough historical data. Try again later.'
             '</div>'
         )
     
-    # Optionally save the live result as today's prediction (so next click is instant)
+    # Save result for today (so background job doesn't duplicate)
     with get_db() as db:
-        new_pred = StockPredictionModel(
+        # Delete any old for today
+        db.query(StockPredictionModel).filter(
+            StockPredictionModel.ticker == ticker,
+            func.date(StockPredictionModel.prediction_date) == today
+        ).delete()
+        
+        pred = StockPredictionModel(
             ticker=ticker,
             prediction_date=today,
             current_price=result['current_price'],
             forecast_json=json.dumps(result['forecast']),
             chart_base64=result.get('chart_base64')
         )
-        db.add(new_pred)
+        db.add(pred)
         db.commit()
     
     return templates.TemplateResponse("components/prediction_modal.html", {"request": request, "data": result})
 
+def run_and_save_prediction(ticker: str, today: date):
+    """Runs prediction and saves to DB (called in background)"""
+    result = run_lstm_prediction(ticker)
+    if not result:
+        logger.warning(f"Background prediction failed for {ticker}")
+        return
+    
+    with get_db() as db:
+        # Delete old if any (safety)
+        db.query(StockPredictionModel).filter(
+            StockPredictionModel.ticker == ticker,
+            func.date(StockPredictionModel.prediction_date) == today
+        ).delete()
+        
+        pred = StockPredictionModel(
+            ticker=ticker,
+            prediction_date=today,
+            current_price=result['current_price'],
+            forecast_json=json.dumps(result['forecast']),
+            chart_base64=result.get('chart_base64')
+        )
+        db.add(pred)
+        db.commit()
+    logger.info(f"Background prediction saved for {ticker}")
 
 @app.on_event("startup")
 async def startup_event():

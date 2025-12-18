@@ -1,47 +1,59 @@
-<!-- templates/components/prediction_modal.html -->
- <meta name="viewport" content="width=device-width, initial-scale=1">
 <div class="modal fade" id="predictModal" tabindex="-1">
-  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+  <div class="modal-dialog modal-lg modal-fullscreen-sm-down modal-dialog-scrollable">
+
+<div class="modal fade" id="predictModal" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-fullscreen-sm-down modal-dialog-scrollable">
     <div class="modal-content">
       <div class="modal-header bg-success text-white">
-        <h5 class="modal-title">🔮 Price Forecast - {{ data.ticker }}</h5>
+        <h5 class="modal-title">🔮 Forecast - {{ data.ticker }}</h5>
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
-        <p class="mb-3"><strong>Latest Close Price:</strong> ₹{{ data.current_price }}</p>
+        <p class="mb-3"><strong>Current Price:</strong> ₹{{ data.current_price }}</p>
 
-        <!-- New: Forecast Chart -->
-        <h6 class="mb-3">Price Forecast Chart (LSTM Model)</h6>
+        {% if data.chart_base64 %}
         <div class="text-center mb-4">
-          <img src="data:image/png;base64,{{ data.chart_base64 }}" alt="Forecast Chart" class="img-fluid rounded shadow-sm" style="max-height: 400px;">
+          <img src="data:image/png;base64,{{ data.chart_base64 }}" class="img-fluid rounded shadow-sm" style="max-height: 400px;">
+        </div>
+        {% else %}
+        <div class="alert alert-info text-center mb-4">
+          <i class="fas fa-chart-line fa-2x mb-2"></i><br>
+          Chart temporarily unavailable. Showing table forecast below.
+        </div>
+        {% endif %}
+
+        <!-- Always show table -->
+        <h6>6-Day Price Prediction</h6>
+        <div class="table-responsive">
+          <table class="table table-sm table-bordered">
+            <!-- table content same as before -->
+          </table>
         </div>
 
         <!-- Forecast Table -->
-        <h6>Next 6 Trading Days Prediction</h6>
-        <table class="table table-sm table-bordered table-striped">
-          <thead class="table-light">
-            <tr>
-              <th>Date</th>
-              <th>Predicted Price (₹)</th>
-              <th>Change (₹)</th>
-              <th>Change (%)</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for item in data.forecast %}
-            <tr {% if loop.index == 1 %}class="table-info fw-bold"{% endif %}>
-              <td>{{ item.date }} {% if loop.index == 1 %}(Predicted Today){% endif %}</td>
-              <td>₹{{ item.price }}</td>
-              <td>{% if item.change >= 0 %}+{% endif %}{{ item.change }}</td>
-              <td>{% if item.change_pct >= 0 %}+{% endif %}{{ item.change_pct }}%</td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-        <small class="text-muted d-block mt-3">
-          * Prediction based on LSTM using RSI, MACD, CCI, Volume, PE, etc.<br>
-          Historical data (blue) + Forecast (orange dots)
-        </small>
+        <h6 class="mb-3">6-Day Price Prediction</h6>
+        <div class="table-responsive">
+          <table class="table table-sm table-bordered table-striped">
+            <thead class="table-light">
+              <tr>
+                <th>Date</th>
+                <th>Price (₹)</th>
+                <th>Change (₹)</th>
+                <th>Change (%)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for item in data.forecast %}
+              <tr {% if loop.index == 1 %}class="table-info fw-bold"{% endif %}>
+                <td>{{ item.date }} {% if loop.index == 1 %}(Today){% endif %}</td>
+                <td>₹{{ item.price }}</td>
+                <td>{% if item.change >= 0 %}+{% endif %}{{ item.change }}</td>
+                <td>{% if item.change_pct >= 0 %}+{% endif %}{{ item.change_pct }}%</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
@@ -51,12 +63,6 @@
 </div>
 
 <script>
-  // Auto-show modal when loaded
   var predictModal = new bootstrap.Modal(document.getElementById('predictModal'));
   predictModal.show();
-
-  // Clear modal content after close (fixes "not going back" feel)
-  document.getElementById('predictModal').addEventListener('hidden.bs.modal', function () {
-    document.getElementById('modalContainer').innerHTML = '';
-  });
 </script>

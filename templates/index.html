@@ -57,10 +57,22 @@
     .badge.SELL { background: var(--danger); color: white; }
     .badge.HOLD { background: var(--warning); color: #000; }
     .table th {
-      background: rgba(67, 97, 238, 0.1);
+      background: linear-gradient(135deg, #4361ee, #3f37c9) !important;
+      color: white !important;
       font-weight: 600;
-      color: #2b2d42;
-      font-size: 0.9em;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      font-size: 0.85rem;
+      border: none;
+      padding-top: 1rem;
+      padding-bottom: 1rem;
+    }
+    .table tbody tr {
+      transition: all 0.2s ease;
+    }
+    .table tbody tr:hover {
+      background-color: rgba(67, 97, 238, 0.05);
+      transform: scale(1.01);
     }
     .modal-content {
       border-radius: 16px;
@@ -73,34 +85,18 @@
       color: #6c757d;
       white-space: nowrap;
     }
-    /* Mobile: Larger touch targets */
+    /* Mobile: Larger touch targets & better spacing */
     @media (max-width: 768px) {
       .btn {
-        padding: 0.6rem 1rem !important;
-        font-size: 0.95rem !important;
+        padding: 0.7rem 1.2rem !important;
+        font-size: 1rem !important;
+      }
+      .table th, .table td {
+        font-size: 0.85rem;
+        padding: 0.75rem 0.5rem;
       }
     }
-    .table thead th {
-  background: linear-gradient(135deg, #4361ee, #3f37c9) !important;
-  color: white !important;
-  font-weight: 600;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-  font-size: 0.85rem;
-  border: none;
-  padding-top: 1rem;
-  padding-bottom: 1rem;
-}
-.table tbody tr {
-  transition: all 0.2s ease;
-}
-.table tbody tr:hover {
-  background-color: rgba(67, 97, 238, 0.05);
-  transform: scale(1.01);
-}
   </style>
-
-
 </head>
 <body>
   <div class="container-fluid py-4 px-3">
@@ -129,29 +125,30 @@
     {% else %}
       <div class="card bg-white mx-auto" style="max-width: 100%;">
         <div class="card-body p-0">
-          <!-- Mobile-friendly responsive table -->
           <div class="table-responsive">
             <table class="table table-hover align-middle mb-0 table-sm">
-              <thead class="table-dark">
-  <tr>
-    <th class="ps-3 py-3 text-white fw-semibold">Ticker</th>
-    <th class="d-none d-md-table-cell py-3 text-white fw-semibold">Company</th>
-    <th class="py-3 text-white fw-semibold">RSI</th>
-    <th class="d-none d-md-table-cell py-3 text-white fw-semibold">CCI</th>
-    <th class="d-none d-lg-table-cell py-3 text-white fw-semibold">Sentiment</th>
-    <th class="d-none d-lg-table-cell py-3 text-white fw-semibold">News</th>
-    <th class="d-none d-lg-table-cell py-3 text-white fw-semibold">Sent. Score</th>
-    <th class="d-none d-lg-table-cell py-3 text-white fw-semibold">Tech. Score</th>
-    <th class="d-none d-lg-table-cell py-3 text-white fw-semibold">EPS</th>
-    <th class="d-none d-lg-table-cell py-3 text-white fw-semibold">P/E</th>
-    <th class="d-none d-lg-table-cell py-3 text-white fw-semibold">MACD</th>
-    <th class="d-none d-lg-table-cell py-3 text-white fw-semibold">Bollinger</th>
-    <th class="d-none d-lg-table-cell py-3 text-white fw-semibold">Volume</th>
-    <th class="py-3 text-white fw-semibold">Final Score</th>
-    <th class="py-3 text-white fw-semibold">Signal</th>
-    <th class="text-center py-3 text-white fw-semibold">Actions</th>
-  </tr>
-</thead>
+              <thead>
+                <tr>
+                  <th class="ps-3">Ticker</th>
+                  <th class="d-none d-md-table-cell">Company</th>
+                  <th>RSI</th>
+                  <!-- CCI visible on mobile (tablet+) -->
+                  <th class="d-none d-sm-table-cell">CCI</th>
+                  <th class="d-none d-lg-table-cell">Sentiment</th>
+                  <th class="d-none d-lg-table-cell">News</th>
+                  <th class="d-none d-lg-table-cell">S. Score</th>
+                  <th class="d-none d-lg-table-cell">T. Score</th>
+                  <th class="d-none d-lg-table-cell">EPS</th>
+                  <th class="d-none d-lg-table-cell">P/E</th>
+                  <th class="d-none d-lg-table-cell">MACD</th>
+                  <!-- Bollinger High/Low visible on mobile (tablet+) -->
+                  <th class="d-none d-sm-table-cell">Bollinger</th>
+                  <th class="d-none d-lg-table-cell">Volume</th>
+                  <th>Final Score</th>
+                  <th>Signal</th>
+                  <th class="text-center">Actions</th>
+                </tr>
+              </thead>
               <tbody id="stock-list">
                 {% for stock in stocks %}
                 <tr id="stock-row-{{ stock.ticker }}">
@@ -163,17 +160,13 @@
                     <span class="badge {{ 'bg-success' if stock.rsi < 30 else 'bg-danger' if stock.rsi > 70 else 'bg-light text-dark' }}">
                         {{ rsi_val }}
                     </span>
-                    <strong style="font-size: 1.4em; margin-left: 8px;">
-                        {% if stock.final_score >= 0.6 %}↑
-                        {% elif stock.final_score <= 0.4 %}↓
-                        {% else %}→{% endif %}
-                    </strong>
                   </td>
 
-                  <td class="d-none d-md-table-cell">
+                  <!-- CCI - Visible on mobile -->
+                  <td class="d-none d-sm-table-cell">
                     {% set cci_val = "%.1f"|format(stock.cci) if stock.cci is number else "N/A" %}
                     <span class="badge {{ 'bg-danger' if stock.cci > 100 else 'bg-success' if stock.cci < -100 else 'bg-light text-dark' }}">
-                        {{ cci_val }}
+                      {{ cci_val }}
                     </span>
                   </td>
 
@@ -199,21 +192,24 @@
                       {{ macd_status }}
                     </span>
                   </td>
-                 <td class="d-none d-lg-table-cell">
-  {% set bb_status = 'Oversold' if 'Oversold' in stock.bb_signal else 'Overbought' if 'Overbought' in stock.bb_signal else 'Range' if 'Range' in stock.bb_signal else 'N/A' %}
-  <div>
-    <span class="badge {{ 'bg-success' if bb_status == 'Oversold' else 'bg-danger' if bb_status == 'Overbought' else 'bg-light text-dark' }} mb-1">
-      {{ bb_status }}
-    </span>
-  </div>
-  {% if "H:" in stock.bb_signal %}
-    <small class="text-muted d-block">
-      {{ stock.bb_signal.split('(')[1].replace(')', '').strip() }}
-    </small>
-  {% else %}
-    <small class="text-muted">N/A</small>
-  {% endif %}
-</td>
+
+                  <!-- Bollinger High/Low - Visible on mobile -->
+                  <td class="d-none d-sm-table-cell">
+                    <div>
+                      {% set bb_status = 'Oversold' if 'Oversold' in stock.bb_signal else 'Overbought' if 'Overbought' in stock.bb_signal else 'Range' if 'Range' in stock.bb_signal else 'N/A' %}
+                      <span class="badge {{ 'bg-success' if bb_status == 'Oversold' else 'bg-danger' if bb_status == 'Overbought' else 'bg-light text-dark' }} mb-1">
+                        {{ bb_status }}
+                      </span>
+                      {% if "H:" in stock.bb_signal %}
+                        <small class="text-muted d-block">
+                          {{ stock.bb_signal.split('(')[1].replace(')', '').strip() }}
+                        </small>
+                      {% else %}
+                        <small class="text-muted">N/A</small>
+                      {% endif %}
+                    </div>
+                  </td>
+
                   <td class="d-none d-lg-table-cell">
                     <span class="badge {{ 'bg-success' if 'High' in stock.volume_signal else 'bg-danger' if 'Low' in stock.volume_signal else 'bg-light text-dark' }}">
                       {{ stock.volume_signal }}
@@ -223,21 +219,18 @@
                   <td class="fw-bold fs-5">{{ "%.2f"|format(stock.final_score) }}</td>
                   <td><span class="badge {{ stock.recommendation }}">{{ stock.recommendation }}</span></td>
 
-                  <!-- ACTIONS COLUMN - FULLY MOBILE FRIENDLY -->
+                  <!-- ACTIONS - Mobile Friendly -->
                   <td class="text-center align-middle">
                     <div class="d-flex gap-2 flex-wrap justify-content-center">
-                      <!-- Refresh -->
                       <button 
                         hx-post="/refresh-single/{{ stock.ticker }}"
                         hx-target="#stock-row-{{ stock.ticker }}"
                         hx-swap="outerHTML"
-                        hx-on::after-request="showToast('Refreshed {{ stock.ticker }}')"
                         class="btn btn-sm btn-refresh text-white"
                         title="Refresh">
                         <i class="fas fa-sync-alt"></i>
                       </button>
 
-                      <!-- News -->
                       <button 
                         hx-get="/news/{{ stock.ticker }}" 
                         hx-target="#news-modal .modal-body" 
@@ -249,23 +242,18 @@
                         <i class="fas fa-newspaper"></i>
                       </button>
 
-                      <!-- Delete -->
                       <button 
                         hx-delete="/delete-stock/{{ stock.ticker }}"
                         hx-swap="outerHTML"
                         hx-target="closest tr"
                         hx-confirm="Delete {{ stock.ticker }} permanently?"
-                        hx-on::after-request="showToast('Deleted {{ stock.ticker }}')"
                         class="btn btn-sm btn-delete text-white"
                         title="Delete">
                         <i class="fas fa-trash"></i>
                       </button>
 
-                      <!-- PREDICT BUTTON - LAST, GUARANTEED GREEN -->
                       <button 
-                        hx-get="/predict/{{ stock.ticker }}"
-                        hx-target="#modalContainer"
-                        hx-swap="innerHTML"
+                        onclick="window.location.href='/predict-page/{{ stock.ticker }}'"
                         class="btn btn-sm btn-predict text-white"
                         title="Predict Next 6 Days">
                         <i class="fas fa-crystal-ball"></i> Predict
@@ -281,7 +269,7 @@
       </div>
     {% endif %}
 
-    <!-- MODAL CONTAINER -->
+    <!-- MODAL CONTAINER (kept for news modal) -->
     <div id="modalContainer"></div>
 
     <!-- News Modal -->
@@ -320,24 +308,6 @@
         const toast = new bootstrap.Toast(toastEl);
         toast.show();
       }
-
-      // Show prediction modal
-      document.body.addEventListener('htmx:afterSwap', function(evt) {
-        if (evt.detail.target.id === 'modalContainer') {
-          const modalEl = document.getElementById('predictModal');
-          if (modalEl) {
-            const modal = new bootstrap.Modal(modalEl);
-            modal.show();
-          }
-        }
-      });
-
-      // Clean up modal
-      document.body.addEventListener('hidden.bs.modal', function(evt) {
-        if (evt.target.id === 'predictModal') {
-          document.getElementById('modalContainer').innerHTML = '';
-        }
-      });
     </script>
 </body>
 </html>
