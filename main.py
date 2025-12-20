@@ -847,26 +847,19 @@ def run_lstm_prediction(ticker: str) -> Optional[Dict]:
             prev_price = price
 
         # --- Generate Chart ---
-            # --- Generate Chart (Safe - with fallback) ---
-        chart_base64 = None
-        try:
-            fig, ax = plt.subplots(figsize=(10, 5))
-            ax.plot(df.index[-60:], df['Close'][-60:], label='Historical', color='blue', linewidth=2)
-            ax.plot(dates, pred_prices, label='Predicted', color='orange', marker='o', linewidth=2.5)
-            ax.set_title(f'{ticker} - 6-Day Forecast', fontsize=14)
-            ax.set_ylabel('Price (₹)')
-            ax.legend()
-            ax.grid(alpha=0.3)
-            plt.tight_layout()
-
-            buf = BytesIO()
-            fig.savefig(buf, format='png', dpi=150, bbox_inches='tight')
-            buf.seek(0)
-            chart_base64 = base64.b64encode(buf.read()).decode('utf-8')
-            plt.close(fig)
-        except Exception as e:
-            logger.warning(f"Chart generation failed for {ticker}: {e}")
-            chart_base64 = None  # Continue without chart
+                # --- Model Efficiency Chart: Last 7 Actual + Last 7 Backtested Predicted + Next 6 Forecast ---
+        {% if data.chart_base64 %}
+            <div class="chart-container mb-5">
+            <div class="alert alert-info text-center small mb-3">
+                <strong>Advanced Efficiency:</strong> Blue = Actual (last 7 days) | Green dashed = Backtested predictions (last 7 days) | Orange dashed = Forecast (next 6 days)
+            </div>
+            <img src="data:image/png;base64,{{ data.chart_base64 }}" class="img-fluid rounded shadow">
+            </div>
+            {% else %}
+            <div class="alert alert-warning text-center mb-5">
+            Advanced chart unavailable (data issue). Table forecast below.
+            </div>
+        {% endif %}
 
         # Forecast list (same as before)
         forecast = []

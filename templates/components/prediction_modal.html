@@ -37,14 +37,19 @@
             <p class="fs-5 mb-1"><strong>Current Closing Price:</strong></p>
             <p class="display-6 fw-bold text-success">₹{{ data.current_price }}</p>
           </div>
-
-          {% if data.chart_base64 %}
-          <div class="chart-container mb-5">
-            <img src="data:image/png;base64,{{ data.chart_base64 }}" 
-                 class="img-fluid rounded shadow" 
-                 alt="Price Forecast Chart" style="max-height: 450px;">
-          </div>
-          {% endif %}
+     
+      {% if data.chart_base64 %}
+<div class="chart-container mb-5">
+  <div class="alert alert-info text-center small mb-3">
+    <strong>Advanced Efficiency:</strong> Blue = Actual (last 7 days) | Green dashed = Backtested predictions (last 7 days) | Orange dashed = Forecast (next 6 days)
+  </div>
+  <img src="data:image/png;base64,{{ data.chart_base64 }}" class="img-fluid rounded shadow">
+</div>
+{% else %}
+<div class="alert alert-warning text-center mb-5">
+  Advanced chart unavailable (data issue). Table forecast below.
+</div>
+{% endif %}
 
           <h5 class="text-center mb-4">Detailed 6-Day Prediction</h5>
           <div class="table-responsive">
