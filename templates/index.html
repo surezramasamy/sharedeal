@@ -252,12 +252,14 @@
                         <i class="fas fa-trash"></i>
                       </button>
 
-                      <button 
-                        onclick="window.location.href='/predict-page/{{ stock.ticker }}'"
-                        class="btn btn-sm btn-predict text-white"
-                        title="Predict Next 6 Days">
-                        <i class="fas fa-crystal-ball"></i> Predict
-                      </button>
+                     <button 
+                      hx-get="/predict/{{ stock.ticker }}"
+                      hx-target="#modalContainer"
+                      hx-swap="innerHTML"
+                      class="btn btn-sm btn-predict text-white"
+                      title="Predict Next 6 Days">
+                      <i class="fas fa-crystal-ball"></i> Predict
+                    </button>
                     </div>
                   </td>
                 </tr>

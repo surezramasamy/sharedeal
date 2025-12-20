@@ -27,6 +27,8 @@ import torch
 import torch.nn as nn
 from sklearn.preprocessing import MinMaxScaler
 
+from fastapi import BackgroundTasks
+
 
 from datetime import datetime, timedelta, date
 from datetime import date
@@ -921,36 +923,84 @@ async def predict_page(ticker: str, request: Request):
 
 
 def run_daily_predictions_async():
-    """Runs LSTM predictions for all stocks once per day."""
     today = datetime.utcnow().date()
     
     with get_db() as db:
         stocks = db.query(StockModel).filter(StockModel.is_active == True).all()
-        if not stocks:
-            logger.info("No active stocks to predict.")
-            return
-
+    
     for stock in stocks:
         ticker = stock.ticker
+        company_name = stock.company_name
         
-        # Check if prediction already exists for today
+        # Skip if already done today
         with get_db() as db:
             existing = db.query(StockPredictionModel).filter(
                 StockPredictionModel.ticker == ticker,
                 func.date(StockPredictionModel.prediction_date) == today
             ).first()
             if existing:
-                logger.info(f"Prediction for {ticker} already exists for today. Skipping.")
                 continue
+        
+        result = run_lstm_prediction(ticker)
+        if result:
+            with get_db() as db:
+                pred = StockPredictionModel(
+                    ticker=ticker,
+                    prediction_date=today,
+                    current_price=result['current_price'],
+                    forecast_json=json.dumps(result['forecast']),
+                    chart_base64=result.get('chart_base64')
+                )
+                db.add(pred)
+                db.commit()
+            logger.info(f"Daily prediction saved for {ticker}")
 
-        # Run prediction
+
+
+
+@app.get("/predict/{ticker}", response_class=HTMLResponse)
+async def predict_stock(ticker: str, request: Request, background_tasks: BackgroundTasks):
+    today = datetime.utcnow().date()
+    
+    with get_db() as db:
+        pred = db.query(StockPredictionModel).filter(
+            StockPredictionModel.ticker == ticker,
+            func.date(StockPredictionModel.prediction_date) == today
+        ).first()
+    
+    if pred:
+        # Instant result from DB
+        data = {
+            "ticker": ticker,
+            "current_price": pred.current_price,
+            "forecast": json.loads(pred.forecast_json),
+            "chart_base64": pred.chart_base64,
+            "status": "complete"
+        }
+    else:
+        # Start background prediction
+        background_tasks.add_task(run_and_save_prediction, ticker, today)
+        data = {
+            "ticker": ticker,
+            "status": "running"
+        }
+    
+    # Always use the same template
+    return templates.TemplateResponse("components/prediction_modal.html", {"request": request, "data": data})
+
+def run_and_save_prediction(ticker: str, today: date):
+    try:
         result = run_lstm_prediction(ticker)
         if not result:
-            logger.warning(f"Failed to predict {ticker} today.")
-            continue
-
-        # Save to DB
+            logger.warning(f"Background prediction failed for {ticker}")
+            return
+        
         with get_db() as db:
+            db.query(StockPredictionModel).filter(
+                StockPredictionModel.ticker == ticker,
+                func.date(StockPredictionModel.prediction_date) == today
+            ).delete()
+            
             pred = StockPredictionModel(
                 ticker=ticker,
                 prediction_date=today,
@@ -960,87 +1010,15 @@ def run_daily_predictions_async():
             )
             db.add(pred)
             db.commit()
-        logger.info(f"Saved daily prediction for {ticker}")
+        logger.info(f"Background prediction completed and saved for {ticker}")
+    except Exception as e:
+        logger.error(f"Error in background prediction for {ticker}: {e}")
 
-# Background thread to run once per day
-def start_daily_prediction_job():
-    def job():
-        while True:
-            now = datetime.utcnow()
-            # Run at 1:00 AM UTC daily
-            next_run = (now + timedelta(days=1)).replace(hour=1, minute=0, second=0, microsecond=0)
-            sleep_time = (next_run - now).total_seconds()
-            logger.info(f"Next daily prediction run in {sleep_time/3600:.1f} hours.")
-            time.sleep(sleep_time)
-            run_daily_predictions_async()
-
-    threading.Thread(target=job, daemon=True).start()
-
-from fastapi import BackgroundTasks
-
-@app.get("/predict/{ticker}", response_class=HTMLResponse)
-async def predict_stock(ticker: str, request: Request):
-    today = datetime.utcnow().date()
-    
-    # Run live prediction every time (reliable, shows immediately)
-    result = run_lstm_prediction(ticker)
-    if not result:
-        return HTMLResponse(
-            '<div class="alert alert-warning p-4 text-center">'
-            '<strong>Prediction unavailable</strong><br>'
-            'Not enough historical data. Try again later.'
-            '</div>'
-        )
-    
-    # Save result for today (so background job doesn't duplicate)
-    with get_db() as db:
-        # Delete any old for today
-        db.query(StockPredictionModel).filter(
-            StockPredictionModel.ticker == ticker,
-            func.date(StockPredictionModel.prediction_date) == today
-        ).delete()
-        
-        pred = StockPredictionModel(
-            ticker=ticker,
-            prediction_date=today,
-            current_price=result['current_price'],
-            forecast_json=json.dumps(result['forecast']),
-            chart_base64=result.get('chart_base64')
-        )
-        db.add(pred)
-        db.commit()
-    
-    return templates.TemplateResponse("components/prediction_modal.html", {"request": request, "data": result})
-
-def run_and_save_prediction(ticker: str, today: date):
-    """Runs prediction and saves to DB (called in background)"""
-    result = run_lstm_prediction(ticker)
-    if not result:
-        logger.warning(f"Background prediction failed for {ticker}")
-        return
-    
-    with get_db() as db:
-        # Delete old if any (safety)
-        db.query(StockPredictionModel).filter(
-            StockPredictionModel.ticker == ticker,
-            func.date(StockPredictionModel.prediction_date) == today
-        ).delete()
-        
-        pred = StockPredictionModel(
-            ticker=ticker,
-            prediction_date=today,
-            current_price=result['current_price'],
-            forecast_json=json.dumps(result['forecast']),
-            chart_base64=result.get('chart_base64')
-        )
-        db.add(pred)
-        db.commit()
-    logger.info(f"Background prediction saved for {ticker}")
-
-@app.on_event("startup")
-async def startup_event():
-    start_daily_prediction_job()
-    logger.info("Daily prediction background job started.")
+@app.get("/run-daily-predictions")
+async def run_daily_predictions_endpoint():
+    """Endpoint called by Railway cron job"""
+    run_daily_predictions_async()  # Reuse your existing function
+    return {"status": "Daily predictions completed"}
 
 if __name__ == "__main__":
     import uvicorn
