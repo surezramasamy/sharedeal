@@ -949,14 +949,64 @@ async def delete_stock(ticker: str):
 
 @app.get("/news/{ticker}")
 async def get_news_html(ticker: str):
-    with get_db() as db:
-        s = db.query(StockModel).filter(StockModel.ticker == ticker).first()
-        name = s.company_name if s else ticker
-    articles = fetch_news(name)
-    html = f"<h5>Latest News for {name}</h5><ul>"
-    for a in articles: html += f"<li>{a}</li>"
-    html += "</ul>"
-    return HTMLResponse(html)
+    """Fetch and return news articles in formatted HTML"""
+    try:
+        # Get company name
+        with get_db() as db:
+            s = db.query(StockModel).filter(StockModel.ticker == ticker).first()
+            name = s.company_name if s else ticker.replace(".NS", "")
+        
+        logger.info(f"Fetching news for {ticker} ({name})")
+        
+        # Fetch articles
+        articles = fetch_news(name)
+        logger.info(f"Got {len(articles)} articles for {name}")
+        
+        # Build response
+        if not articles:
+            html = f"""
+            <div class="text-center py-4">
+                <i class="fas fa-newspaper fa-3x text-muted mb-3"></i>
+                <p class="text-muted"><strong>{name}</strong></p>
+                <p class="text-muted small">No news articles found at this moment.</p>
+            </div>
+            """
+        else:
+            html = f"""
+            <div class="alert alert-info mb-3" role="alert">
+                <strong>📰 {name}</strong> - {len(articles)} latest articles
+            </div>
+            <div class="news-articles">
+            """
+            for idx, article in enumerate(articles, 1):
+                html += f"""
+                <div class="card mb-3 border-start border-5 border-primary">
+                    <div class="card-body">
+                        <h6 class="card-title text-primary">
+                            <i class="fas fa-newspaper"></i> Article {idx}
+                        </h6>
+                        <p class="card-text mb-0">{article}</p>
+                    </div>
+                </div>
+                """
+            html += """
+            </div>
+            """
+        
+        return HTMLResponse(html)
+    
+    except Exception as e:
+        logger.error(f"❌ News endpoint error for {ticker}: {str(e)}")
+        return HTMLResponse(f"""
+        <div class="alert alert-danger" role="alert">
+            <strong>❌ Error loading news:</strong><br/>
+            {str(e)}<br/>
+            <small>Check logs for details</small>
+        </div>
+        """)
+
+
+
 
 
 @app.get("/run-daily-predictions")
