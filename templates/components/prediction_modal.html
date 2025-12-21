@@ -6,16 +6,26 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
   <style>
-    body { background: rgba(0,0,0,0.5); }
+    body { background: rgba(0,0,0,0.6); }
     .modal-content {
       border-radius: 16px;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+      box-shadow: 0 15px 40px rgba(0,0,0,0.4);
     }
     .chart-container {
       background: white;
       border-radius: 12px;
-      padding: 15px;
-      box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+      padding: 20px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    }
+    .metric-box {
+      background: #f8f9fa;
+      border-radius: 12px;
+      padding: 18px;
+      text-align: center;
+      transition: transform 0.2s;
+    }
+    .metric-box:hover {
+      transform: translateY(-5px);
     }
   </style>
 </head>
@@ -23,54 +33,80 @@
   <div class="modal fade show d-block" id="predictModal" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-fullscreen-sm-down modal-lg">
       <div class="modal-content border-0 shadow-lg rounded-4">
+        
         {% if data.status == "complete" %}
         <!-- FULL RESULT -->
-        <div class="modal-header bg-success text-white">
-          <h5 class="modal-title">
-            <i class="fas fa-crystal-ball me-2"></i>
-            6-Day Forecast - {{ data.ticker }}
+        <div class="modal-header bg-gradient bg-success text-white rounded-top-4 py-4">
+          <h5 class="modal-title w-100 text-center fs-4">
+            <i class="fas fa-crystal-ball me-3"></i>
+            6-Day Price Forecast - {{ data.ticker }}
           </h5>
-          <button type="button" class="btn-close btn-close-white" aria-label="Close" onclick="closePredictionModal()"></button>
+          <button type="button" class="btn-close btn-close-white position-absolute end-0 top-50 translate-middle-y me-3" onclick="closePredictionModal()"></button>
         </div>
-        <div class="modal-body">
-          <div class="text-center mb-4">
-            <p class="fs-5 mb-1"><strong>Current Closing Price:</strong></p>
-            <p class="display-6 fw-bold text-success">₹{{ data.current_price }}</p>
+        
+        <div class="modal-body p-4">
+          <!-- Current Price -->
+          <div class="text-center mb-5 p-4 bg-light rounded-3">
+            <p class="fs-5 text-muted mb-2">Latest Closing Price</p>
+            <p class="display-5 fw-bold text-success mb-0">₹{{ data.current_price }}</p>
           </div>
-     
-      {% if data.chart_base64 %}
-<div class="chart-container mb-5">
-  <div class="alert alert-info text-center small mb-3">
-    <strong>Advanced Efficiency:</strong> Blue = Actual (last 7 days) | Green dashed = Backtested predictions (last 7 days) | Orange dashed = Forecast (next 6 days)
-  </div>
-  <img src="data:image/png;base64,{{ data.chart_base64 }}" class="img-fluid rounded shadow">
-</div>
-{% else %}
-<div class="alert alert-warning text-center mb-5">
-  Advanced chart unavailable (data issue). Table forecast below.
-</div>
-{% endif %}
 
-          <h5 class="text-center mb-4">Detailed 6-Day Prediction</h5>
-          <div class="table-responsive">
-            <table class="table table-bordered table-hover">
+         
+
+          <!-- Advanced Chart -->
+          {% if data.chart_base64 %}
+          <div class="chart-container mb-5">
+            <div class="alert alert-info text-center mb-4 p-3 rounded-3">
+              <i class="fas fa-chart-line me-2 fs-4"></i>
+              <strong class="fs-5">Advanced Model Efficiency Chart</strong><br>
+              <small>
+                Blue = Actual prices (last 15 days)<br>
+                Green dashed = Backtested model predictions (last 15 days)<br>
+                Purple = Today's predicted close<br>
+                Orange dashed = Forecast (next 6 days)
+              </small>
+            </div>
+            <img src="data:image/png;base64,{{ data.chart_base64 }}" 
+                 class="img-fluid rounded shadow-lg" 
+                 alt="Model Efficiency Chart">
+          </div>
+          {% else %}
+          <div class="alert alert-warning text-center mb-5 p-4 rounded-3">
+            <i class="fas fa-exclamation-triangle me-2 fs-4"></i>
+            <strong>Advanced chart unavailable</strong><br>
+            <small>Showing table forecast below.</small>
+          </div>
+          {% endif %}
+
+          <!-- Forecast Table -->
+          <h5 class="text-center mb-4">
+            <i class="fas fa-table me-2"></i>
+            Detailed 6-Day Price Prediction
+          </h5>
+          <div class="table-responsive mb-5">
+            <table class="table table-bordered table-hover table-striped shadow-sm">
               <thead class="table-success">
                 <tr>
-                  <th>Date</th>
-                  <th>Price (₹)</th>
-                  <th>Change (₹)</th>
-                  <th>Change (%)</th>
+                  <th class="text-center">Date</th>
+                  <th class="text-center">Predicted Price (₹)</th>
+                  <th class="text-center">Daily Change (₹)</th>
+                  <th class="text-center">Change (%)</th>
                 </tr>
               </thead>
               <tbody>
                 {% for item in data.forecast %}
                 <tr {% if loop.index == 1 %}class="table-info fw-bold"{% endif %}>
-                  <td>{{ item.date }} {% if loop.index == 1 %}(Today){% endif %}</td>
-                  <td class="fw-semibold">₹{{ item.price }}</td>
-                  <td class="{% if item.change >= 0 %}text-success{% else %}text-danger{% endif %}">
+                  <td class="text-center">
+                    {{ item.date }}
+                    {% if loop.index == 1 %}
+                      <span class="badge bg-primary ms-2">Today</span>
+                    {% endif %}
+                  </td>
+                  <td class="text-center fw-semibold">₹{{ item.price }}</td>
+                  <td class="text-center fw-bold {% if item.change >= 0 %}text-success{% else %}text-danger{% endif %}">
                     {% if item.change >= 0 %}+{% endif %}{{ item.change }}
                   </td>
-                  <td class="{% if item.change_pct >= 0 %}text-success{% else %}text-danger{% endif %}">
+                  <td class="text-center fw-bold {% if item.change_pct >= 0 %}text-success{% else %}text-danger{% endif %}">
                     {% if item.change_pct >= 0 %}+{% endif %}{{ item.change_pct }}%
                   </td>
                 </tr>
@@ -78,40 +114,56 @@
               </tbody>
             </table>
           </div>
+
+          <div class="text-center mt-4 text-muted small">
+            <i class="fas fa-info-circle me-1"></i>
+            Predictions powered by LSTM neural network trained on price, volume, RSI, MACD, Bollinger Bands, CCI, and P/E ratio.
+          </div>
         </div>
 
         {% else %}
         <!-- IN PROGRESS -->
-        <div class="modal-header bg-primary text-white">
-          <h5 class="modal-title">Prediction in Progress</h5>
-          <button type="button" class="btn-close btn-close-white" aria-label="Close" onclick="closePredictionModal()"></button>
+        <div class="modal-header bg-gradient bg-primary text-white rounded-top-4 py-4">
+          <h5 class="modal-title w-100 text-center fs-4">Prediction in Progress</h5>
+          <button type="button" class="btn-close btn-close-white position-absolute end-0 top-50 translate-middle-y me-3" onclick="closePredictionModal()"></button>
         </div>
         <div class="modal-body text-center py-5">
-          <div class="spinner-border text-primary mb-4" role="status" style="width: 4rem; height: 4rem;">
+          <div class="spinner-border text-primary mb-4" role="status" style="width: 5rem; height: 5rem;">
             <span class="visually-hidden">Loading...</span>
           </div>
-          <h5>Analyzing {{ data.ticker }}...</h5>
-          <p class="text-muted">This takes 10-30 seconds.<br>
-             Close and click Predict again later for result.</p>
+          <h3 class="mb-3">Analyzing {{ data.ticker }}...</h3>
+          <p class="text-muted fs-5">
+            Training LSTM model and generating forecast.<br>
+            This usually takes 15-30 seconds.
+          </p>
+          <p class="text-muted small mt-4">
+            You can close this modal and click Predict again later to see the result.
+          </p>
+          <button type="button" class="btn btn-outline-secondary btn-lg px-5 mt-3" onclick="closePredictionModal()">
+            Close & Check Later
+          </button>
         </div>
         {% endif %}
 
-        <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" onclick="closePredictionModal()">Close</button>
+        <!-- Footer -->
+        <div class="modal-footer justify-content-center border-0 py-4">
+          <button type="button" class="btn btn-secondary btn-lg px-5 shadow-sm" onclick="closePredictionModal()">
+            Close
+          </button>
         </div>
       </div>
     </div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script>
-    // Simple, reliable close function
     function closePredictionModal() {
-      document.getElementById('modalContainer').innerHTML = '';
+      const container = document.getElementById('modalContainer');
+      if (container) {
+        container.innerHTML = '';
+      }
     }
 
-    // Optional: Close on backdrop click
-    document.querySelector('.modal').addEventListener('click', function(e) {
+    document.querySelector('.modal')?.addEventListener('click', function(e) {
       if (e.target === this) {
         closePredictionModal();
       }
