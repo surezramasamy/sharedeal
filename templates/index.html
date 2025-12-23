@@ -178,6 +178,13 @@
       color: var(--primary);
     }
     
+    .bollinger-detail {
+      font-size: 0.7rem;
+      color: #666;
+      margin-top: 4px;
+      line-height: 1.2;
+    }
+    
     .stock-card-actions {
       padding: 1rem;
       border-top: 1px solid #e9ecef;
@@ -194,7 +201,6 @@
       border-radius: 6px;
     }
 
-    /* News list styling */
     .news-item {
       padding: 1rem;
       border-left: 4px solid var(--primary);
@@ -262,7 +268,6 @@
         </div>
       </div>
     </div>
-
 
     {% if stocks|length == 0 %}
       <div class="text-center py-5">
@@ -423,7 +428,6 @@
         </div>
       </div>
 
-
       <!-- MOBILE CARD VIEW -->
       <div class="d-lg-none">
         {% for stock in stocks %}
@@ -469,6 +473,22 @@
                 <span class="badge {{ 'bg-success' if stock.rsi < 30 else 'bg-danger' if stock.rsi > 70 else 'bg-light text-dark' }}">
                   {{ rsi_val }}
                 </span>
+              </div>
+            </div>
+
+            <!-- NEW: Bollinger Bands in Mobile -->
+            <div class="metric-item">
+              <div class="metric-label">Bollinger</div>
+              <div class="metric-value">
+                {% set bb_status = 'Oversold' if 'Oversold' in stock.bb_signal else 'Overbought' if 'Overbought' in stock.bb_signal else 'Range' if 'Range' in stock.bb_signal else 'N/A' %}
+                <span class="badge {{ 'bg-success' if bb_status == 'Oversold' else 'bg-danger' if bb_status == 'Overbought' else 'bg-light text-dark' }}">
+                  {{ bb_status }}
+                </span>
+                {% if "H:" in stock.bb_signal %}
+                  <div class="bollinger-detail">
+                    {{ stock.bb_signal.split('(')[1].replace(')', '').strip() }}
+                  </div>
+                {% endif %}
               </div>
             </div>
           </div>
@@ -550,12 +570,10 @@
       </div>
     {% endif %}
 
-
     <!-- MODAL CONTAINER -->
     <div id="modalContainer"></div>
 
-
-    <!-- News Modal - FIXED VERSION -->
+    <!-- News Modal -->
     <div class="modal fade" id="news-modal" tabindex="-1">
       <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content">
@@ -576,7 +594,6 @@
       </div>
     </div>
 
-
     <!-- Toast -->
     <div class="position-fixed bottom-0 end-0 p-3" style="z-index: 1100">
       <div id="liveToast" class="toast align-items-center text-white bg-success border-0" role="alert">
@@ -587,7 +604,6 @@
       </div>
     </div>
 
-
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
       function showToast(message) {
@@ -597,48 +613,17 @@
         toast.show();
       }
 
-      // LIVE PRICE UPDATE FUNCTION
+      // LIVE PRICE UPDATE FUNCTION (optional - if you add live price endpoint)
       function updateLivePrices() {
-        const priceBadges = document.querySelectorAll('[data-ticker]');
-        
-        priceBadges.forEach(element => {
-          const ticker = element.getAttribute('data-ticker');
-          
-          fetch(`/price/${ticker}`)
-            .then(response => response.json())
-            .then(data => {
-              const tableBadge = document.querySelector(`tr[id="stock-row-${ticker}"] .price-badge`);
-              if (tableBadge) {
-                tableBadge.textContent = `₹${data.price.toFixed(2)}`;
-              }
-              
-              const cardPrice = document.querySelector(`.stock-card[data-ticker="${ticker}"] [data-ticker-price="${ticker}"]`);
-              if (cardPrice) {
-                cardPrice.textContent = `₹${data.price.toFixed(2)}`;
-              }
-              
-              console.log(`Updated ${ticker}: ₹${data.price}`);
-            })
-            .catch(error => console.error(`Error fetching price for ${ticker}:`, error));
+        const priceElements = document.querySelectorAll('[data-ticker-price]');
+        priceElements.forEach(el => {
+          const ticker = el.getAttribute('data-ticker-price');
+          // You can fetch live price from /price/{ticker} if implemented
         });
       }
 
       document.addEventListener('DOMContentLoaded', function() {
         updateLivePrices();
-      });
-
-      document.body.addEventListener('htmx:afterSwap', function(event) {
-        if (event.detail.target.id && event.detail.target.id.startsWith('stock-row-')) {
-          updateLivePrices();
-        }
-      });
-
-      // FIX NEWS DISPLAY
-      document.addEventListener('htmx:afterSwap', function(event) {
-        // Check if this was a news fetch
-        if (event.detail.xhr && event.detail.xhr.responseURL && event.detail.xhr.responseURL.includes('/news/')) {
-          console.log('News loaded via HTMX');
-        }
       });
     </script>
 </body>

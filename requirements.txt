@@ -13,7 +13,8 @@ textblob
 sqlalchemy
 python-dateutil
 tqdm
-xgboost scikit-learn
+xgboost 
+scikit-learn
 
 
 
